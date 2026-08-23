@@ -104,6 +104,48 @@ class TestComps:
         assert outcome.value_range.point_usd < outcome.value_range.high_usd
 
 
+class TestCompsFunnel:
+    def test_the_funnel_reconciles_to_the_universe(self, company, provider):
+        ctx = make_context(provider, "comps")
+        outcome = ComparableCompanyAnalysis().compute(company, ctx)
+        f = outcome.funnel
+
+        assert f.proposed == f.retained + f.total_dropped
+        assert f.retained == len(outcome.peers)
+
+    def test_the_trimmed_outlier_is_reported_as_a_rejection(self, company, provider):
+        ctx = make_context(provider, "comps")
+        outcome = ComparableCompanyAnalysis().compute(company, ctx)
+        ktra = next(e for e in outcome.excluded_peers if e.ticker == "KTRA")
+
+        assert ktra.stage == "statistical"
+        assert "Tukey fence" in ktra.reason
+        assert outcome.funnel.dropped_outlier == 1
+
+    def test_size_band_rejections_are_staged_as_comparability(self, company, provider):
+        """A 300x band puts the ceiling at $3B, which drops the largest peer only."""
+        ctx = make_context(provider, "comps", overrides={"peer_size_band": 300.0})
+        outcome = ComparableCompanyAnalysis().compute(company, ctx)
+        dropped = [e for e in outcome.excluded_peers if e.stage == "comparability"]
+
+        assert [e.ticker for e in dropped] == ["ATLS"]
+        assert "size band" in dropped[0].reason
+        assert outcome.funnel.dropped_not_comparable == 1
+
+    def test_every_retained_peer_carries_a_reason_for_being_there(self, company, provider):
+        ctx = make_context(provider, "comps")
+        outcome = ComparableCompanyAnalysis().compute(company, ctx)
+
+        assert all(p.inclusion_rationale for p in outcome.peers)
+
+    def test_the_narrative_reports_both_sides_of_the_funnel(self, company, provider):
+        ctx = make_context(provider, "comps")
+        outcome = ComparableCompanyAnalysis().compute(company, ctx)
+
+        assert "candidates were considered" in outcome.narrative
+        assert "rejected" in outcome.narrative
+
+
 class TestDcf:
     def test_unlevered_fcf_matches_the_line_item_build(self, projections):
         # 2026: EBIT -1.5M at 21% tax, +0.6M D&A, -0.9M capex, -0.4M NWC.
@@ -165,7 +207,7 @@ class TestLastRound:
         LastRoundMarkToMarket().compute(company, ctx)
 
         index = next(a for a in ctx.trail.assumptions if a.key == "market_index")
-        assert index.value == "EMCLOUD"
+        assert index.value == "WCLD"
 
     def test_index_choice_can_be_overridden(self, company, provider):
         ctx = make_context(provider, "last_round", overrides={"market_index": "^IXIC"})

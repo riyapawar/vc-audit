@@ -61,7 +61,7 @@ class TestAssumptions:
             (0.205, "percent", "20.50%"),
             (8.2222, "multiple", "8.22x"),
             (1_500_000, "usd", "$1,500,000"),
-            ("EMCLOUD", None, "EMCLOUD"),
+            ("WCLD", None, "WCLD"),
         ],
     )
     def test_display_value_formats_by_unit(self, value, unit, expected):

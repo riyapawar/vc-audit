@@ -14,7 +14,10 @@ from typer.testing import CliRunner
 from vc_audit.cli import app
 
 runner = CliRunner()
-AS_OF = ["--as-of", "2026-08-22"]
+# Every CLI test pins the data source to fixtures. The suite must be
+# hermetic: a test that reaches the network is a test that fails on a
+# plane, and one that silently passes when the live path is broken.
+AS_OF = ["--as-of", "2026-08-22", "--data", "fixtures"]
 
 
 def invoke(*args):
@@ -129,14 +132,17 @@ class TestMethods:
 
 class TestPeers:
     def test_lists_the_screened_universe(self):
-        result = invoke("peers", "saas")
+        result = invoke("peers", "saas", "--data", "fixtures")
 
         assert result.exit_code == 0
         assert "KTRA" in result.output
-        assert "EV/Revenue" in result.output
+        # Column headers wrap at narrow widths, so assert on content and on the
+        # provenance line rather than on a header string.
+        assert "Public comparables" in result.output
+        assert "synthetic" in result.output
 
     def test_an_unknown_sector_lists_what_is_available(self):
-        result = invoke("peers", "widgets")
+        result = invoke("peers", "widgets", "--data", "fixtures")
 
         assert result.exit_code == 1
         assert "fintech" in result.output

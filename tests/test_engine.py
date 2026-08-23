@@ -8,7 +8,8 @@ import pytest
 
 from tests.conftest import AS_OF
 from vc_audit.data.mock_provider import MockMarketDataProvider
-from vc_audit.domain.errors import FatalError
+from vc_audit.data.resilient import ResilientMarketDataProvider
+from vc_audit.domain.errors import DataUnavailableError, FatalError
 from vc_audit.domain.models import PortfolioCompany
 from vc_audit.engine import value_company
 
@@ -74,6 +75,45 @@ class TestGracefulDegradation:
         )
         report = value(company, provider)
         assert [r.method_id for r in report.method_results] == ["dcf"]
+
+
+class TestDataProvenance:
+    def test_the_run_opens_by_naming_its_data_sources(self, company, provider):
+        report = value(company, provider)
+        step = report.engine_trail.step("data_sources")
+
+        assert step.inputs["provider"] == "yahoo_finance_mock"
+        assert "fixtures" in step.output
+
+    def test_a_fixture_substitution_is_disclosed_as_an_exception(self, company):
+        """Fixture figures must never be presented with the authority of filed ones."""
+
+        class DeadPrimary:
+            name = "dead"
+            degradations: list[str] = []
+
+            def describe(self):
+                return "unreachable"
+
+            def known_sectors(self):
+                return []
+
+            def get_peers(self, **kwargs):
+                raise DataUnavailableError("dead", "peers", "connection refused")
+
+            def get_index_level(self, **kwargs):
+                raise DataUnavailableError("dead", "index", "connection refused")
+
+        provider = ResilientMarketDataProvider(DeadPrimary(), MockMarketDataProvider())
+        report = value(company, provider)
+
+        assert report.engine_trail.step("data_degradation").output
+        assert any("fell back to checked-in fixtures" in w for w in report.all_warnings)
+
+    def test_no_degradation_step_when_nothing_degraded(self, company, provider):
+        report = value(company, provider)
+        with pytest.raises(KeyError):
+            report.engine_trail.step("data_degradation")
 
 
 class TestConclusion:

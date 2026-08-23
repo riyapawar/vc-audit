@@ -76,6 +76,10 @@ def company(projections) -> PortfolioCompany:
     return PortfolioCompany(
         name="Basis AI",
         sector="saas",
+        business_description=(
+            "Enterprise SaaS platform selling AI-assisted document review to mid-market "
+            "legal and compliance teams, on annual per-seat subscriptions."
+        ),
         ltm_revenue_usd=10_000_000,
         ltm_ebitda_usd=-2_000_000,
         cash_usd=18_000_000,

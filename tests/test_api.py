@@ -28,7 +28,11 @@ def client(tmp_path, monkeypatch):
 
 @pytest.fixture
 def payload(company):
-    return {"company": company.model_dump(mode="json"), "as_of": AS_OF.isoformat()}
+    return {
+        "company": company.model_dump(mode="json"),
+        "as_of": AS_OF.isoformat(),
+        "data_mode": "fixtures",
+    }
 
 
 class TestOps:
@@ -59,21 +63,27 @@ class TestMethodsEndpoint:
 
 class TestPeersEndpoint:
     def test_returns_the_screened_universe_with_multiples(self, client):
-        body = client.get("/api/peers", params={"sector": "saas"}).json()
+        body = client.get("/api/peers", params={"sector": "saas", "data": "fixtures"}).json()
 
         assert len(body["peers"]) == 8
         assert all(p["ev_to_revenue"] > 0 for p in body["peers"])
         assert "yahoo_finance_mock" in body["citation"]
 
     def test_an_unknown_sector_is_a_404_listing_what_exists(self, client):
-        response = client.get("/api/peers", params={"sector": "widgets"})
+        response = client.get("/api/peers", params={"sector": "widgets", "data": "fixtures"})
 
         assert response.status_code == 404
         assert "saas" in response.json()["detail"]
 
     def test_a_size_band_narrows_the_screen(self, client):
         narrow = client.get(
-            "/api/peers", params={"sector": "saas", "revenue": 10_000_000, "size_band": 40}
+            "/api/peers",
+            params={
+                "sector": "saas",
+                "revenue": 10_000_000,
+                "size_band": 40,
+                "data": "fixtures",
+            },
         ).json()
         assert len(narrow["peers"]) < 8
 
@@ -122,7 +132,11 @@ class TestValuationsEndpoint:
     def test_a_company_no_method_supports_is_a_422_not_a_500(self, client):
         response = client.post(
             "/api/valuations",
-            json={"company": {"name": "Stealth Co", "sector": "saas"}, "as_of": "2026-08-22"},
+            json={
+                "company": {"name": "Stealth Co", "sector": "saas"},
+                "as_of": "2026-08-22",
+                "data_mode": "fixtures",
+            },
         )
 
         assert response.status_code == 422
@@ -131,7 +145,10 @@ class TestValuationsEndpoint:
     def test_a_malformed_record_is_rejected_by_schema_validation(self, client):
         response = client.post(
             "/api/valuations",
-            json={"company": {"name": "X", "sector": "saas", "ltm_revenue_usd": -1}},
+            json={
+                "company": {"name": "X", "sector": "saas", "ltm_revenue_usd": -1},
+                "data_mode": "fixtures",
+            },
         )
 
         assert response.status_code == 422
