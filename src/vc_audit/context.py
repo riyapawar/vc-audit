@@ -39,6 +39,9 @@ class ValuationContext:
     trail: AuditTrail
     method_id: str = "engine"
     overrides: dict[str, Any] = field(default_factory=dict)
+    #: Optional model-driven peer selection. ``None`` keeps the run fully
+    #: deterministic; see :mod:`vc_audit.research`.
+    researcher: Any | None = None
 
     def for_method(self, method_id: str, trail: AuditTrail) -> ValuationContext:
         """Derive a context scoped to one method, sharing overrides and provider."""
@@ -48,6 +51,7 @@ class ValuationContext:
             trail=trail,
             method_id=method_id,
             overrides=self.overrides,
+            researcher=self.researcher,
         )
 
     def with_overrides(self, extra: dict[str, Any], trail: AuditTrail) -> ValuationContext:
@@ -62,6 +66,9 @@ class ValuationContext:
             trail=trail,
             method_id=self.method_id,
             overrides={**self.overrides, **extra},
+            # Sensitivity re-runs must not repeat model calls: they would cost
+            # money, add latency, and could change the peer set mid-sweep.
+            researcher=None,
         )
 
     # ---- the single assumption accessor ---------------------------------

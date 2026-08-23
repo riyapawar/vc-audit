@@ -49,6 +49,7 @@ def value_company(
     methods: Sequence[str] | None = None,
     overrides: dict[str, Any] | None = None,
     run_sensitivity: bool = True,
+    researcher: Any | None = None,
 ) -> ValuationReport:
     """Produce a complete, auditable fair value estimate.
 
@@ -62,6 +63,8 @@ def value_company(
         overrides: Assumption overrides, keyed bare (``wacc``) or qualified
             (``dcf.wacc``).
         run_sensitivity: Whether to stress each method's drivers.
+        researcher: Optional model-driven peer selection. ``None`` keeps the
+            run fully deterministic; see :mod:`vc_audit.research`.
 
     Returns:
         A :class:`ValuationReport` carrying the conclusion and every trail
@@ -81,15 +84,24 @@ def value_company(
             "as_of": as_of.isoformat(),
             "methods": sorted(methods) if methods else None,
             "overrides": overrides,
+            "researcher": getattr(researcher, "name", None),
         },
     )
-    base_ctx = ValuationContext(as_of=as_of, provider=provider, trail=trail, overrides=overrides)
+    base_ctx = ValuationContext(
+        as_of=as_of,
+        provider=provider,
+        trail=trail,
+        overrides=overrides,
+        researcher=researcher,
+    )
 
+    _record_data_sources(provider, trail)
     selected, skipped = _select_methods(company, methods, trail)
     results, run_skips = _run_methods(
         selected, company, base_ctx, trail, run_sensitivity=run_sensitivity
     )
     skipped.extend(run_skips)
+    _record_data_degradations(provider, trail)
 
     if not results:
         reasons = "; ".join(f"{s.method_id}: {s.reason}" for s in skipped) or "no methods selected"
@@ -121,6 +133,45 @@ def value_company(
 # --------------------------------------------------------------------------
 # Stages
 # --------------------------------------------------------------------------
+
+
+def _record_data_sources(provider: MarketDataProvider, trail: AuditTrail) -> None:
+    """Open the trail by naming where the market data comes from.
+
+    First question a reviewer asks of any figure sourced outside the company.
+    """
+    trail.record(
+        label="data_sources",
+        description="Identify the market data sources this run drew on.",
+        formula="provider configuration",
+        inputs={"provider": provider.name},
+        output=provider.describe(),
+    )
+
+
+def _record_data_degradations(provider: MarketDataProvider, trail: AuditTrail) -> None:
+    """Surface any silent substitution the provider made during the run.
+
+    A resilient provider may fall back from live filings to fixtures. That is
+    the right behaviour, but it must never be invisible: fixture figures
+    presented with the authority of filed ones would be the worst outcome
+    available. Read defensively, since not every provider degrades at all.
+    """
+    degradations: list[str] = list(getattr(provider, "degradations", []))
+    if not degradations:
+        return
+    trail.record(
+        label="data_degradation",
+        description=(
+            "Record where a live data source was unavailable and fixture data was "
+            "substituted."
+        ),
+        formula="fallbacks taken during this run",
+        inputs={"count": len(degradations)},
+        output=degradations,
+    )
+    for message in degradations:
+        trail.warn(message)
 
 
 def _select_methods(

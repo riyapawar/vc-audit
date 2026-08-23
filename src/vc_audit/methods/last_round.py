@@ -34,7 +34,7 @@ from vc_audit.methods.base import DriverSpec, MethodOutcome, ValuationMethod
 
 #: Sector to public index. Falls back to the broad market where unmapped.
 SECTOR_INDEX_MAP = {
-    "saas": "EMCLOUD",
+    "saas": "WCLD",
     "fintech": "^IXIC",
     "marketplace": "^IXIC",
     "healthtech": "^IXIC",

@@ -14,14 +14,21 @@ contains arithmetic and nothing else.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from vc_audit.context import ValuationContext
 from vc_audit.domain.errors import MissingInputError
-from vc_audit.domain.models import MethodResult, PortfolioCompany, ValuationRange
+from vc_audit.domain.models import (
+    ExcludedPeer,
+    MethodResult,
+    PeerCompany,
+    PeerFunnel,
+    PortfolioCompany,
+    ValuationRange,
+)
 
 
 class DriverSpec(BaseModel):
@@ -64,6 +71,10 @@ class MethodOutcome:
     value_range: ValuationRange
     narrative: str
     enterprise_value_usd: float | None = None
+    #: Comparables evidence, for methods that value against a peer set.
+    peers: list[PeerCompany] = field(default_factory=list)
+    excluded_peers: list[ExcludedPeer] = field(default_factory=list)
+    funnel: PeerFunnel | None = None
 
 
 class ValuationMethod(ABC):
@@ -119,6 +130,9 @@ class ValuationMethod(ABC):
             value_range=outcome.value_range,
             narrative=outcome.narrative,
             trail=ctx.trail,
+            peers=outcome.peers,
+            excluded_peers=outcome.excluded_peers,
+            funnel=outcome.funnel,
         )
 
 
