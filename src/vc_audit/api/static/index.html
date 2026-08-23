@@ -5,153 +5,709 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VC Audit Tool</title>
 <style>
-  :root {
-    --bg: #f6f7f9;      --panel: #ffffff;   --ink: #16191d;     --muted: #626b78;
-    --line: #dfe3e8;    --accent: #1f5fd0;  --accent-soft: #e8f0fd;
-    --good: #1a7f52;    --warn: #a1670a;    --bad: #b4342c;
-    --code: #f0f2f5;    --radius: 8px;
+/* Palette slots 1-3 (blue / orange / aqua) carry method identity. Only the first
+   three categorical slots clear the all-pairs colour-vision gates in both modes,
+   which is exactly how many methods this tool runs. Every mark is also labelled
+   in text, so identity is never colour alone. */
+:root {
+  color-scheme: light;
+  --surface-0: #f4f4f2;
+  --surface-1: #fcfcfb;
+  --surface-2: #f0efec;
+  --line:      #dedcd6;
+  --line-soft: #ebe9e4;
+  --ink:       #0b0b0b;
+  --ink-2:     #52514e;
+  --ink-3:     #78766f;
+  --accent:    #2a78d6;
+  --accent-bg: #eaf2fd;
+  --series-1:  #2a78d6;
+  --series-2:  #eb6834;
+  --series-3:  #1baf7a;
+  --good:      #0a6c4a;
+  --good-bg:   #e6f4ee;
+  --warn:      #8a5a00;
+  --warn-bg:   #fdf4e3;
+  --bad:       #b4342c;
+  --bad-bg:    #fdeceb;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16,16,16,.05), 0 4px 16px rgba(16,16,16,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #131312;
+    --surface-1: #1a1a19;
+    --surface-2: #232322;
+    --line:      #34342f;
+    --line-soft: #2a2a27;
+    --ink:       #ffffff;
+    --ink-2:     #c3c2b7;
+    --ink-3:     #918f85;
+    --accent:    #3987e5;
+    --accent-bg: #17273b;
+    --series-1:  #3987e5;
+    --series-2:  #d95926;
+    --series-3:  #199e70;
+    --good:      #4fbc86;
+    --good-bg:   #14271f;
+    --warn:      #d9a441;
+    --warn-bg:   #2a2216;
+    --bad:       #ef6f66;
+    --bad-bg:    #2d1a19;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.2);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #14171b;    --panel: #1b1f25;   --ink: #e8eaed;     --muted: #9aa4b2;
-      --line: #2c333c;  --accent: #6a9bff;  --accent-soft: #1c2738;
-      --good: #4fbc86;  --warn: #d9a441;    --bad: #ef6f66;     --code: #22272e;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  header {
-    padding: 18px 24px; border-bottom: 1px solid var(--line);
-    background: var(--panel); display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-  }
-  header h1 { font-size: 17px; margin: 0; letter-spacing: -0.01em; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  header a { color: var(--accent); font-size: 13px; margin-left: auto; }
-  main { display: grid; grid-template-columns: 380px 1fr; gap: 20px; padding: 20px; align-items: start; }
-  @media (max-width: 940px) { main { grid-template-columns: 1fr; } }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #131312; --surface-1: #1a1a19; --surface-2: #232322;
+  --line: #34342f; --line-soft: #2a2a27;
+  --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #918f85;
+  --accent: #3987e5; --accent-bg: #17273b;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  --good: #4fbc86; --good-bg: #14271f;
+  --warn: #d9a441; --warn-bg: #2a2216;
+  --bad: #ef6f66;  --bad-bg: #2d1a19;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.2);
+}
 
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
-  .panel + .panel { margin-top: 16px; }
-  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
-  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; font-weight: 600; }
-  select, input, textarea, button {
-    width: 100%; font: inherit; color: var(--ink); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
-  }
-  textarea { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px; min-height: 260px; resize: vertical; }
-  button.primary {
-    background: var(--accent); color: #fff; border: none; font-weight: 600;
-    padding: 11px; margin-top: 16px; cursor: pointer;
-  }
-  button.primary:disabled { opacity: .55; cursor: progress; }
-  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--surface-0); color: var(--ink);
+  font: 15px/1.55 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.num { font-variant-numeric: tabular-nums; }
 
-  .headline { font-size: 34px; font-weight: 650; letter-spacing: -0.02em; margin: 2px 0 4px; }
-  .range { color: var(--muted); font-size: 14px; }
-  .narrative { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+/* ---- chrome ---- */
+header {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 12px 22px; background: var(--surface-1);
+  border-bottom: 1px solid var(--line);
+}
+header h1 { font-size: 15px; margin: 0; letter-spacing: -.01em; font-weight: 650; }
+header .tag {
+  font-size: 12px; color: var(--ink-2); padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+header .spacer { margin-left: auto; }
+header a, .linkish {
+  color: var(--accent); font-size: 13px; text-decoration: none;
+  background: none; border: 0; cursor: pointer; font-family: inherit;
+}
+header a:hover, .linkish:hover { text-decoration: underline; }
+#theme { font-size: 15px; line-height: 1; padding: 6px 9px; border-radius: 7px;
+         border: 1px solid var(--line); background: var(--surface-2); cursor: pointer; }
 
-  .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px;
-           font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
-  .badge.tight { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
-  .badge.moderate, .badge['single-method'] { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
-  .badge.wide { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+main { display: grid; grid-template-columns: 366px minmax(0, 1fr); gap: 18px; padding: 18px 22px 72px; align-items: start; }
+@media (max-width: 1040px) { main { grid-template-columns: 1fr; } }
+aside { position: sticky; top: 63px; }
+@media (max-width: 1040px) { aside { position: static; } }
 
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 12px;
-         font-family: ui-monospace, Consolas, monospace; }
-  .scroll { overflow-x: auto; }
+.card {
+  background: var(--surface-1); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow);
+}
+.card + .card { margin-top: 16px; }
+.card > h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-3); margin: 0 0 14px; font-weight: 650;
+}
+.card > h2 .count { color: var(--ink-2); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.sub { color: var(--ink-2); font-size: 13px; }
 
-  details { border: 1px solid var(--line); border-radius: var(--radius); margin-top: 10px; background: var(--panel); }
-  details > summary { cursor: pointer; padding: 12px 16px; font-weight: 600; display: flex;
-                      gap: 12px; align-items: baseline; list-style: none; }
-  details > summary::-webkit-details-marker { display: none; }
-  details > summary::before { content: "▸"; color: var(--muted); }
-  details[open] > summary::before { content: "▾"; }
-  details > summary .val { margin-left: auto; font-variant-numeric: tabular-nums; }
-  details .body { padding: 0 16px 16px; }
+/* ---- form ---- */
+label { display: block; font-size: 12px; color: var(--ink-2); margin: 14px 0 5px; font-weight: 600; }
+label:first-of-type { margin-top: 0; }
+select, input, textarea {
+  width: 100%; font: inherit; font-size: 14px; color: var(--ink);
+  background: var(--surface-0); border: 1px solid var(--line);
+  border-radius: 7px; padding: 8px 10px;
+}
+select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+textarea { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px; min-height: 210px; resize: vertical; line-height: 1.5; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.check { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; font-size: 13px; color: var(--ink-2); }
+.check input { width: auto; margin: 2px 0 0; accent-color: var(--accent); }
+.check label { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+.check .why { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+button.go {
+  width: 100%; margin-top: 18px; padding: 11px; border: 0; border-radius: 8px;
+  background: var(--accent); color: #fff; font: inherit; font-weight: 650; cursor: pointer;
+}
+button.go:disabled { opacity: .55; cursor: progress; }
+.hint { font-size: 12px; color: var(--ink-3); margin-top: 7px; }
+.hint code { background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
 
-  ol.exceptions { margin: 0; padding-left: 20px; font-size: 13.5px; }
-  ol.exceptions li { margin-bottom: 7px; }
-  .bar { height: 7px; background: var(--accent); border-radius: 3px; min-width: 2px; }
-  .fp { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--muted); word-break: break-all; }
-  .error { border-left: 3px solid var(--bad); padding-left: 12px; color: var(--bad); }
-  .empty { color: var(--muted); font-size: 14px; }
+/* ---- conclusion ---- */
+.headline { font-size: 40px; font-weight: 640; letter-spacing: -.025em; line-height: 1.05; margin: 4px 0 6px; }
+.headrow { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.narrative { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-soft); color: var(--ink-2); font-size: 14px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
+.badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.badge.tight { background: var(--good-bg); color: var(--good); }
+.badge.moderate, .badge.single-method { background: var(--warn-bg); color: var(--warn); }
+.badge.wide { background: var(--bad-bg); color: var(--bad); }
+.badge.live { background: var(--good-bg); color: var(--good); }
+.badge.fixtures { background: var(--warn-bg); color: var(--warn); }
+
+/* ---- tables ---- */
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th {
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--ink-3); font-weight: 650; padding: 0 12px 8px 0; border-bottom: 1px solid var(--line);
+}
+td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th.r, td.r { text-align: right; }
+th:last-child, td:last-child { padding-right: 0; }
+.tick { font-weight: 660; letter-spacing: .01em; }
+.why { color: var(--ink-3); font-size: 12.5px; margin-top: 3px; max-width: 46ch; }
+.scroll { overflow-x: auto; }
+a.filing { color: var(--accent); text-decoration: none; font-size: 12.5px; white-space: nowrap; }
+a.filing:hover { text-decoration: underline; }
+.muted { color: var(--ink-3); font-size: 12.5px; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+       background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+
+/* ---- funnel tiles ---- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; }
+.tile { border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; background: var(--surface-0); }
+.tile .n { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); font-weight: 650; }
+.tile .v { font-size: 23px; font-weight: 640; margin-top: 3px; letter-spacing: -.02em; }
+.tile .d { font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+.tile.keep .v { color: var(--good); }
+
+/* ---- math block ---- */
+.math {
+  background: var(--surface-0); border: 1px solid var(--line); border-radius: 8px;
+  padding: 13px 15px; font-size: 13.5px; line-height: 2; overflow-x: auto;
+}
+.math .l { display: flex; gap: 10px; align-items: baseline; white-space: nowrap; }
+.math .op { color: var(--ink-3); width: 12px; flex: none; }
+.math .expr { color: var(--ink-2); font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+.math .eq { margin-left: auto; font-weight: 650; padding-left: 22px; }
+
+/* ---- disclosure ---- */
+details { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-0); }
+details + details { margin-top: 9px; }
+summary { cursor: pointer; padding: 12px 15px; display: flex; gap: 11px; align-items: center; list-style: none; font-weight: 620; }
+summary::-webkit-details-marker { display: none; }
+summary::before { content: "›"; color: var(--ink-3); font-size: 17px; line-height: 1; transition: transform .15s; }
+details[open] summary::before { transform: rotate(90deg); }
+summary .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+summary .v { margin-left: auto; font-weight: 640; }
+details .body { padding: 0 15px 16px; }
+details .body h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+                   color: var(--ink-3); margin: 18px 0 9px; font-weight: 650; }
+
+/* ---- banners ---- */
+ol.exceptions { margin: 0; padding-left: 20px; font-size: 13.5px; color: var(--ink-2); }
+ol.exceptions li { margin-bottom: 8px; }
+ol.exceptions li:last-child { margin-bottom: 0; }
+.banner { border-radius: 8px; padding: 12px 14px; font-size: 13.5px; }
+.banner.bad { background: var(--bad-bg); color: var(--bad); border: 1px solid color-mix(in srgb, var(--bad) 25%, transparent); }
+.banner b { display: block; margin-bottom: 4px; }
+.banner pre { white-space: pre-wrap; margin: 8px 0 0; font-size: 12px; }
+
+/* ---- loading ---- */
+.loading { text-align: center; padding: 46px 20px; }
+.spinner { width: 26px; height: 26px; margin: 0 auto 16px; border-radius: 50%;
+           border: 2.5px solid var(--line); border-top-color: var(--accent);
+           animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading .what { font-size: 14.5px; }
+.loading .elapsed { color: var(--ink-3); font-size: 13px; margin-top: 7px; }
+.empty { color: var(--ink-3); font-size: 14px; text-align: center; padding: 44px 20px; }
+.fp { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--ink-3); word-break: break-all; }
+
+/* ---- charts ---- */
+svg { display: block; max-width: 100%; }
+svg text { font-family: inherit; }
+.axis-line { stroke: var(--line); stroke-width: 1; }
+.grid-line { stroke: var(--line-soft); stroke-width: 1; }
+.axis-text { fill: var(--ink-3); font-size: 11px; }
+.mark-label { fill: var(--ink); font-size: 12.5px; font-weight: 600; }
+.mark-value { fill: var(--ink-2); font-size: 12px; }
+.conclude-line { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 4 3; opacity: .55; }
+.hit { fill: transparent; cursor: default; }
+
+.tooltip {
+  position: fixed; z-index: 60; pointer-events: none; opacity: 0;
+  transition: opacity .1s; background: var(--surface-1); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 7px; padding: 8px 11px;
+  font-size: 12.5px; box-shadow: var(--shadow); max-width: 280px;
+}
+.tooltip .t { font-weight: 650; margin-bottom: 3px; }
+.tooltip .r { color: var(--ink-2); }
 </style>
 </head>
 <body>
 <header>
   <h1>VC Audit Tool</h1>
-  <span class="sub">Fair value estimation for private portfolio companies — every number traceable</span>
-  <a href="/docs">API docs →</a>
+  <span class="tag">Fair value for private portfolio companies &mdash; every figure traceable to a filing</span>
+  <span class="spacer"></span>
+  <span id="provenance"></span>
+  <a href="/docs">API&nbsp;docs</a>
+  <button id="theme" title="Toggle theme" aria-label="Toggle colour theme">◐</button>
 </header>
 
 <main>
-  <section>
-    <div class="panel">
+  <aside>
+    <div class="card">
       <h2>Subject company</h2>
-      <label for="example">Load an example</label>
+
+      <label for="example">Example record</label>
       <select id="example"></select>
 
       <label for="record">Company record (JSON)</label>
-      <textarea id="record" spellcheck="false"></textarea>
+      <textarea id="record" spellcheck="false" aria-label="Company record JSON"></textarea>
 
-      <label for="asof">Valuation date</label>
-      <input id="asof" type="date">
+      <div class="row2">
+        <div>
+          <label for="asof">Valuation date</label>
+          <input id="asof" type="date">
+        </div>
+        <div>
+          <label for="mode">Data source</label>
+          <select id="mode">
+            <option value="auto">Live, fixtures on failure</option>
+            <option value="live">Live only</option>
+            <option value="fixtures">Fixtures only (offline)</option>
+          </select>
+        </div>
+      </div>
 
       <label for="overrides">Assumption overrides</label>
       <input id="overrides" placeholder="wacc=0.18, illiquidity_discount=0.25">
-      <div class="hint">Comma-separated <code>key=value</code>. Qualify per method with <code>dcf.wacc</code>.</div>
+      <div class="hint">Comma-separated <code>key=value</code>. Scope to one method with <code>dcf.wacc</code>.</div>
 
-      <button class="primary" id="run">Run valuation</button>
+      <div class="check">
+        <input type="checkbox" id="research">
+        <div>
+          <label for="research">Model-assisted peer selection</label>
+          <span class="why" id="research-why">Proposes and vets comparables. Off keeps runs reproducible.</span>
+        </div>
+      </div>
+
+      <button class="go" id="run">Run valuation</button>
       <div class="hint" id="status"></div>
     </div>
-  </section>
+  </aside>
 
   <section id="results">
-    <div class="panel empty">Load an example and run a valuation to see the audit trail.</div>
+    <div class="card"><div class="empty">Pick an example and run a valuation.<br>Every number will link back to the filing it came from.</div></div>
   </section>
 </main>
 
+<div class="tooltip" id="tip" role="tooltip"></div>
+
 <script>
+"use strict";
 const $ = (id) => document.getElementById(id);
+
+/* ---------- formatting ------------------------------------------------- */
 const usd = (n) => n == null ? "n/a" : "$" + Math.round(n).toLocaleString("en-US");
 const usdShort = (n) => {
   if (n == null) return "n/a";
   const a = Math.abs(n);
-  if (a >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
-  if (a >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M";
-  if (a >= 1e3) return "$" + (n / 1e3).toFixed(0) + "K";
-  return "$" + n.toFixed(0);
+  if (a >= 1e12) return "$" + (n / 1e12).toFixed(2) + "T";
+  if (a >= 1e9)  return "$" + (n / 1e9).toFixed(2) + "B";
+  if (a >= 1e6)  return "$" + (n / 1e6).toFixed(1) + "M";
+  if (a >= 1e3)  return "$" + Math.round(n / 1e3) + "K";
+  return "$" + Math.round(n);
 };
 const pct = (n, d = 1) => n == null ? "n/a" : (n * 100).toFixed(d) + "%";
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const byUnit = (v, unit) => {
-  if (typeof v !== "number") return typeof v === "object" ? JSON.stringify(v) : esc(v);
+  if (typeof v !== "number") return typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? "");
   if (unit === "usd") return usd(v);
   if (unit === "percent") return pct(v, 2);
   if (unit === "multiple") return v.toFixed(2) + "x";
   if (unit === "ratio") return v.toFixed(2);
-  return Math.abs(v) >= 1000 ? Math.round(v).toLocaleString("en-US") : String(v);
+  return Math.abs(v) >= 1000 ? Math.round(v).toLocaleString("en-US") : String(+v.toFixed(4));
 };
-
-const stepOutput = (step) => {
-  if (step.output && typeof step.output === "object") {
-    const entries = Array.isArray(step.output)
-      ? step.output.map((v) => byUnit(v, step.unit))
-      : Object.entries(step.output).map(([k, v]) => `${k}=${byUnit(v, step.unit)}`);
-    return entries.join(", ");
+const stepResult = (s) => {
+  if (s.output && typeof s.output === "object") {
+    const parts = Array.isArray(s.output)
+      ? s.output.map((v) => byUnit(v, s.unit))
+      : Object.entries(s.output).map(([k, v]) => `${k}=${byUnit(v, s.unit)}`);
+    return parts.join(", ");
   }
-  return byUnit(step.output, step.unit);
+  return byUnit(s.output, s.unit);
 };
 
-// ---- input handling -------------------------------------------------------
+/* Method identity: fixed slot order, assigned by position and never cycled. */
+const SERIES = ["var(--series-1)", "var(--series-2)", "var(--series-3)"];
+const colorFor = (report, methodId) => {
+  const i = report.method_results.findIndex((m) => m.method_id === methodId);
+  return SERIES[i] ?? "var(--ink-3)";
+};
+
+/* ---------- tooltip ---------------------------------------------------- */
+const tip = $("tip");
+function showTip(evt, title, rows) {
+  tip.innerHTML = `<div class="t">${esc(title)}</div>` +
+    rows.map((r) => `<div class="r">${esc(r)}</div>`).join("");
+  tip.style.opacity = "1";
+  const pad = 14;
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  const box = tip.getBoundingClientRect();
+  if (x + box.width > innerWidth - 8) x = evt.clientX - box.width - pad;
+  if (y + box.height > innerHeight - 8) y = evt.clientY - box.height - pad;
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+}
+const hideTip = () => { tip.style.opacity = "0"; };
+
+function wireTips(root) {
+  root.querySelectorAll("[data-tip]").forEach((el) => {
+    const title = el.getAttribute("data-tip");
+    const rows = JSON.parse(el.getAttribute("data-tip-rows") || "[]");
+    el.addEventListener("mousemove", (e) => showTip(e, title, rows));
+    el.addEventListener("mouseleave", hideTip);
+  });
+}
+
+/* ---------- range chart ------------------------------------------------ */
+/* One row per method: the low-high span as a thin rounded bar, the point
+   estimate as a ringed marker, and the blended conclusion as a dashed rule
+   across all rows. A single shared x-axis -- never two scales. */
+function rangeChart(report) {
+  const rows = report.method_results;
+  if (!rows.length) return "";
+
+  const lo = Math.min(report.concluded_range.low_usd, ...rows.map((m) => m.value_range.low_usd));
+  const hi = Math.max(report.concluded_range.high_usd, ...rows.map((m) => m.value_range.high_usd));
+  const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.1 || 1;
+  const min = Math.max(0, lo - pad), max = hi + pad;
+
+  const W = 720, L = 152, R = 96, rowH = 46;
+  // Headroom for the concluded-value annotation that sits above the plot.
+  const top = 30, H = top + rows.length * rowH + 40;
+  const plotW = W - L - R;
+  const x = (v) => L + ((v - min) / (max - min || 1)) * plotW;
+
+  const ticks = 5;
+  const gridline = (i) => {
+    const v = min + ((max - min) * i) / (ticks - 1);
+    return `<line class="grid-line" x1="${x(v)}" y1="${top}" x2="${x(v)}" y2="${top + rows.length * rowH}"/>
+            <text class="axis-text" x="${x(v)}" y="${top + rows.length * rowH + 20}" text-anchor="middle">${usdShort(v)}</text>`;
+  };
+
+  const bars = rows.map((m, i) => {
+    const cy = top + i * rowH + rowH / 2;
+    const x1 = x(m.value_range.low_usd), x2 = x(m.value_range.high_usd);
+    const px = x(m.equity_value_usd);
+    const fill = SERIES[i] ?? "var(--ink-3)";
+    const rows_ = [
+      `Point ${usd(m.equity_value_usd)}`,
+      `Range ${usd(m.value_range.low_usd)} – ${usd(m.value_range.high_usd)}`,
+    ];
+    return `
+      <g data-tip="${esc(m.method_name)}" data-tip-rows='${esc(JSON.stringify(rows_))}'>
+        <rect class="hit" x="${L}" y="${cy - rowH / 2}" width="${plotW}" height="${rowH}"/>
+        <text class="mark-label" x="${L - 12}" y="${cy + 4}" text-anchor="end">${esc(shortName(m.method_name))}</text>
+        <rect x="${x1}" y="${cy - 5}" width="${Math.max(x2 - x1, 6)}" height="10" rx="4" fill="${fill}" opacity=".32"/>
+        <circle cx="${px}" cy="${cy}" r="6.5" fill="${fill}" stroke="var(--surface-1)" stroke-width="2"/>
+        <text class="mark-value num" x="${W - R + 12}" y="${cy + 4}">${usdShort(m.equity_value_usd)}</text>
+      </g>`;
+  }).join("");
+
+  const cx = x(report.concluded_value_usd);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img"
+       aria-label="Valuation range by method, with the blended conclusion marked">
+    ${Array.from({ length: ticks }, (_, i) => gridline(i)).join("")}
+    <line class="conclude-line" x1="${cx}" y1="${top - 6}" x2="${cx}" y2="${top + rows.length * rowH + 4}"/>
+    <text class="axis-text" x="${cx}" y="${top - 12}" text-anchor="middle">concluded ${usdShort(report.concluded_value_usd)}</text>
+    ${bars}
+  </svg>`;
+}
+const shortName = (n) => n.replace(" (Market-Adjusted)", "").replace("Comparable Company Analysis", "Comps");
+
+/* ---------- tornado ---------------------------------------------------- */
+/* One driver per row, ordered by influence. Single series, so one hue and no
+   legend -- the row label names it. */
+function tornado(sensitivity, color) {
+  const rows = [...sensitivity.rows].sort(
+    (a, b) => Math.abs(b.high_value_usd - b.low_value_usd) - Math.abs(a.high_value_usd - a.low_value_usd));
+  if (!rows.length) return "";
+  const base = sensitivity.base_value_usd;
+  const lo = Math.min(base, ...rows.flatMap((r) => [r.low_value_usd, r.high_value_usd]));
+  const hi = Math.max(base, ...rows.flatMap((r) => [r.low_value_usd, r.high_value_usd]));
+  const pad = (hi - lo) * 0.1 || 1;
+  const min = lo - pad, max = hi + pad;
+
+  const W = 640, L = 176, R = 92, rowH = 38, top = 8;
+  const H = top + rows.length * rowH + 30, plotW = W - L - R;
+  const x = (v) => L + ((v - min) / (max - min || 1)) * plotW;
+  const bx = x(base);
+
+  const bars = rows.map((r, i) => {
+    const cy = top + i * rowH + rowH / 2;
+    const x1 = Math.min(x(r.low_value_usd), x(r.high_value_usd));
+    const x2 = Math.max(x(r.low_value_usd), x(r.high_value_usd));
+    const swing = Math.abs(r.high_value_usd - r.low_value_usd);
+    const t = [
+      `${byUnit(r.low_input, r.unit)} → ${byUnit(r.high_input, r.unit)}`,
+      `${usd(r.low_value_usd)} – ${usd(r.high_value_usd)}`,
+      `Swing ${usd(swing)} (${pct(r.swing_pct ?? swing / Math.abs(base), 0)})`,
+    ];
+    return `<g data-tip="${esc(r.label)}" data-tip-rows='${esc(JSON.stringify(t))}'>
+      <rect class="hit" x="${L}" y="${cy - rowH / 2}" width="${plotW}" height="${rowH}"/>
+      <text class="mark-label" x="${L - 12}" y="${cy + 4}" text-anchor="end">${esc(r.label)}</text>
+      <rect x="${x1}" y="${cy - 7}" width="${Math.max(x2 - x1, 3)}" height="14" rx="4" fill="${color}" opacity=".55"/>
+      <text class="mark-value num" x="${W - R + 12}" y="${cy + 4}">${usdShort(swing)}</text>
+    </g>`;
+  }).join("");
+
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Sensitivity of the conclusion to each assumption">
+    <line class="axis-line" x1="${bx}" y1="${top}" x2="${bx}" y2="${top + rows.length * rowH}"/>
+    <text class="axis-text" x="${bx}" y="${H - 10}" text-anchor="middle">base ${usdShort(base)}</text>
+    ${bars}
+  </svg>`;
+}
+
+/* ---------- report sections -------------------------------------------- */
+function conclusion(r) {
+  const c = r.concordance, rng = r.concluded_range;
+  return `<div class="card">
+    <h2>Conclusion &mdash; ${esc(r.company_name)}, ${esc(r.as_of)}</h2>
+    <div class="headline num">${usd(r.concluded_value_usd)}</div>
+    <div class="headrow">
+      <span class="sub num">range ${usd(rng.low_usd)} &ndash; ${usd(rng.high_usd)}</span>
+      <span class="badge ${esc(c.agreement)}">${esc(c.agreement.replace("-", " "))}</span>
+      <span class="sub num">CV ${pct(c.coefficient_of_variation)}</span>
+    </div>
+    <div class="narrative">${esc(r.narrative)}</div>
+  </div>`;
+}
+
+function chartCard(r) {
+  return `<div class="card">
+    <h2>Where each method lands</h2>
+    ${rangeChart(r)}
+    <div class="sub" style="margin-top:10px">
+      Bars span each method's own range; the dot is its point estimate. The dashed
+      rule is the weighted conclusion. Independent methods clustering is corroboration
+      &mdash; a wide spread is a finding, not an average to take.
+    </div>
+  </div>`;
+}
+
+function methodsTable(r) {
+  const rows = r.method_results.map((m, i) => {
+    const top = m.sensitivity?.rows?.length ? [...m.sensitivity.rows].sort(
+      (a, b) => Math.abs(b.high_value_usd - b.low_value_usd) - Math.abs(a.high_value_usd - a.low_value_usd))[0] : null;
+    return `<tr>
+      <td><span class="swatch" style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${SERIES[i]};margin-right:8px"></span>${esc(m.method_name)}</td>
+      <td class="r num">${usd(m.equity_value_usd)}</td>
+      <td class="r num">${usdShort(m.value_range.low_usd)} &ndash; ${usdShort(m.value_range.high_usd)}</td>
+      <td>${top ? esc(top.label) : "&mdash;"}</td>
+    </tr>`;
+  }).join("");
+  const skipped = r.skipped_methods.map((s) => `<tr>
+      <td class="muted">${esc(s.method_name)}</td>
+      <td colspan="3" class="muted">not applied &mdash; ${esc(s.reason)}</td>
+    </tr>`).join("");
+  return `<div class="card"><h2>Methods</h2><div class="scroll"><table>
+    <thead><tr><th>Method</th><th class="r">Value</th><th class="r">Range</th><th>Most sensitive to</th></tr></thead>
+    <tbody>${rows}${skipped}</tbody></table></div></div>`;
+}
+
+function funnelCard(r) {
+  const m = r.method_results.find((x) => x.funnel);
+  if (!m) return "";
+  const f = m.funnel;
+  const tile = (n, v, d, cls = "") =>
+    `<div class="tile ${cls}"><div class="n">${n}</div><div class="v num">${v}</div><div class="d">${d}</div></div>`;
+  return `<div class="card">
+    <h2>How the peer set narrowed</h2>
+    <div class="tiles">
+      ${tile("Considered", f.proposed, "candidate universe")}
+      ${tile("No data", f.dropped_no_data, "filings unusable")}
+      ${tile("Not comparable", f.dropped_not_comparable, "business or size")}
+      ${tile("Outliers", f.dropped_outlier, "outside Tukey fence")}
+      ${tile("Valued against", f.retained, "minimum of 3", "keep")}
+    </div>
+  </div>`;
+}
+
+function peersCard(r) {
+  const m = r.method_results.find((x) => x.peers?.length);
+  if (!m) return "";
+  const rows = m.peers.map((p) => {
+    const ev = p.market_cap_usd + p.total_debt_usd - p.cash_usd;
+    return `<tr>
+      <td><span class="tick">${esc(p.ticker)}</span> ${esc(p.name)}
+        ${p.inclusion_rationale ? `<div class="why">${esc(p.inclusion_rationale)}</div>` : ""}
+        ${p.fundamentals_basis ? `<div class="why">${esc(p.fundamentals_basis)}</div>` : ""}</td>
+      <td class="r num" title="${usd(p.market_cap_usd)}">${usdShort(p.market_cap_usd)}</td>
+      <td class="r num" title="${usd(ev)}">${usdShort(ev)}</td>
+      <td class="r num" title="${usd(p.ltm_revenue_usd)}">${usdShort(p.ltm_revenue_usd)}</td>
+      <td class="r num">${(ev / p.ltm_revenue_usd).toFixed(2)}x</td>
+      <td>${p.latest_filing
+        ? `<a class="filing" href="${esc(p.latest_filing.url)}" target="_blank" rel="noopener">${esc(p.latest_filing.form)} &middot; ${esc(p.latest_filing.filed_at)}</a>`
+        : `<span class="muted">not found</span>`}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="card">
+    <h2>Comparables used <span class="count">&mdash; ${m.peers.length} companies</span></h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Company &amp; why it is in the set</th><th class="r">Market cap</th>
+        <th class="r">Enterprise value</th><th class="r">LTM revenue</th><th class="r">EV/Rev</th><th>Source filing</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div class="sub" style="margin-top:11px">Enterprise value is computed here as market cap + debt &minus; cash,
+      from figures in the linked filing &mdash; not read from a vendor's pre-computed field.</div>
+  </div>`;
+}
+
+function exclusionsCard(r) {
+  const all = r.method_results.flatMap((m) => m.excluded_peers || []);
+  if (!all.length) return "";
+  const LABEL = { data: "Data unusable", comparability: "Not comparable", statistical: "Statistical outlier" };
+  const groups = ["comparability", "statistical", "data"].map((stage) => {
+    const rows = all.filter((e) => e.stage === stage);
+    if (!rows.length) return "";
+    return `<h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);margin:16px 0 7px;font-weight:650">${LABEL[stage]} (${rows.length})</h3>
+      <table><tbody>${rows.map((e) => `<tr>
+        <td style="width:84px"><span class="tick">${esc(e.ticker)}</span></td>
+        <td>${esc(e.reason)}</td></tr>`).join("")}</tbody></table>`;
+  }).join("");
+  return `<div class="card"><h2>Candidates rejected <span class="count">&mdash; ${all.length}</span></h2>
+    <div class="sub">Which companies were considered and dropped is audit evidence in its own right.</div>
+    <div class="scroll">${groups}</div></div>`;
+}
+
+function trailsCard(r) {
+  const blocks = r.method_results.map((m, i) => {
+    const color = SERIES[i] ?? "var(--ink-3)";
+    const scalar = m.trail.steps.filter((s) => typeof s.output === "number");
+    const math = scalar.slice(-4).map((s, j) => `<div class="l">
+        <span class="op">${j === scalar.slice(-4).length - 1 ? "=" : ""}</span>
+        <span class="expr">${esc(s.formula)}</span>
+        <span class="eq num">${esc(byUnit(s.output, s.unit))}</span></div>`).join("");
+
+    const assumptions = m.trail.assumptions.map((a) => `<tr>
+        <td><code>${esc(a.key)}</code></td>
+        <td class="r num">${esc(byUnit(a.value, a.unit))}</td>
+        <td>${esc(a.origin.replace("_", " "))}</td>
+        <td class="why" style="max-width:none">${esc(a.rationale)}</td></tr>`).join("");
+
+    const steps = m.trail.steps.map((s) => `<tr>
+        <td class="r muted" style="width:28px">${s.seq}</td>
+        <td>${esc(s.description)}</td>
+        <td><code>${esc(s.formula)}</code></td>
+        <td class="r num">${esc(stepResult(s))}</td></tr>`).join("");
+
+    return `<details>
+      <summary><span class="swatch" style="background:${color}"></span>${esc(m.method_name)}
+        <span class="v num">${usd(m.equity_value_usd)}</span></summary>
+      <div class="body">
+        <p class="sub">${esc(m.narrative)}</p>
+        <h3>Calculation</h3><div class="math">${math}</div>
+        <h3>Inputs and assumptions</h3>
+        <div class="scroll"><table><thead><tr><th>Key</th><th class="r">Value</th><th>Origin</th><th>Rationale</th></tr></thead>
+          <tbody>${assumptions}</tbody></table></div>
+        <h3>Full calculation trail</h3>
+        <div class="scroll"><table><thead><tr><th class="r">#</th><th>Step</th><th>Arithmetic</th><th class="r">Result</th></tr></thead>
+          <tbody>${steps}</tbody></table></div>
+        ${m.sensitivity?.rows?.length ? `<h3>Sensitivity &mdash; one assumption moved at a time</h3>${tornado(m.sensitivity, color)}` : ""}
+      </div></details>`;
+  }).join("");
+  return `<div class="card"><h2>Audit trail</h2>${blocks}</div>`;
+}
+
+function queueCard(r) {
+  const rows = r.method_results.flatMap((m) =>
+    m.trail.assumptions.filter((a) => a.origin === "engine_default").map((a) => `<tr>
+      <td><code>${esc(m.method_id)}.${esc(a.key)}</code></td>
+      <td class="r num">${esc(byUnit(a.value, a.unit))}</td>
+      <td class="why" style="max-width:none">${esc(a.rationale)}</td></tr>`));
+  if (!rows.length) return `<div class="card"><h2>Assumption review queue</h2>
+    <div class="sub">Every assumption was supplied explicitly. No engine defaults were applied.</div></div>`;
+  return `<div class="card"><h2>Assumption review queue <span class="count">&mdash; ${rows.length} awaiting sign-off</span></h2>
+    <div class="sub">Judgement calls the tool made on the reviewer's behalf. Override any of them from the panel on the left.</div>
+    <div class="scroll" style="margin-top:12px"><table>
+      <thead><tr><th>Assumption</th><th class="r">Applied</th><th>Why this default</th></tr></thead>
+      <tbody>${rows.join("")}</tbody></table></div></div>`;
+}
+
+function exceptionsCard(r) {
+  const warnings = [
+    ...r.engine_trail.warnings,
+    ...r.method_results.flatMap((m) => m.trail.warnings.map((w) => `[${m.method_id}] ${w}`)),
+  ];
+  if (!warnings.length) return "";
+  return `<div class="card"><h2>Exceptions <span class="count">&mdash; ${warnings.length} flagged</span></h2>
+    <ol class="exceptions">${warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ol></div>`;
+}
+
+function sourcesCard(r) {
+  const seen = new Map();
+  for (const t of [r.engine_trail, ...r.method_results.map((m) => m.trail)]) {
+    for (const s of t.steps) for (const src of s.sources || []) {
+      seen.set(`${src.provider}|${src.dataset}|${src.as_of}`, src);
+    }
+  }
+  const rows = [...seen.values()].map((s) => `<tr>
+    <td>${esc(s.provider)}</td><td><code>${esc(s.dataset)}</code></td>
+    <td class="num">${esc(s.as_of)}</td><td class="muted">${esc(s.note || "")}</td></tr>`).join("");
+  return `<div class="card"><h2>Data sources</h2>
+    ${rows ? `<div class="scroll"><table><thead><tr><th>Provider</th><th>Dataset</th><th>As of</th><th>Note</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+    <h2 style="margin-top:18px">Reproducing this run</h2>
+    <div class="sub">Same inputs and same code reproduce this memo byte for byte, including the fingerprint.
+      A fingerprint that no longer matches means something changed.</div>
+    <div class="fp" style="margin-top:9px">run ${esc(r.run_id)}<br>fingerprint ${esc(r.fingerprint)}</div>
+    <div style="margin-top:12px">
+      <a class="filing" href="/api/valuations/${esc(r.run_id)}/memo" target="_blank" rel="noopener">Open the Markdown memo &rarr;</a>
+    </div>
+  </div>`;
+}
+
+function render(report) {
+  const html = [
+    conclusion(report),
+    chartCard(report),
+    methodsTable(report),
+    funnelCard(report),
+    peersCard(report),
+    exclusionsCard(report),
+    queueCard(report),
+    exceptionsCard(report),
+    trailsCard(report),
+    sourcesCard(report),
+  ].filter(Boolean).join("");
+  $("results").innerHTML = html;
+  wireTips($("results"));
+
+  const step = report.engine_trail.steps.find((s) => s.label === "data_sources");
+  const degraded = report.engine_trail.steps.some((s) => s.label === "data_degradation");
+  const live = step && /sec_edgar/.test(String(step.inputs?.provider ?? "")) && !degraded;
+  $("provenance").innerHTML =
+    `<span class="badge ${live ? "live" : "fixtures"}">${live ? "live filings" : "fixture data"}</span>`;
+}
+
+/* ---------- input handling --------------------------------------------- */
+function parseOverrides(text) {
+  const out = {};
+  for (const pair of text.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const i = pair.indexOf("=");
+    if (i < 0) throw new Error(`malformed override "${pair}" — expected key=value`);
+    const key = pair.slice(0, i).trim(), raw = pair.slice(i + 1).trim();
+    if (!key) throw new Error(`malformed override "${pair}" — the key is empty`);
+    const n = Number(raw);
+    out[key] = raw !== "" && !Number.isNaN(n) ? n : raw;
+  }
+  return out;
+}
 
 async function loadExamples() {
   const select = $("example");
@@ -159,8 +715,7 @@ async function loadExamples() {
     const examples = await (await fetch("/api/examples")).json();
     if (!examples.length) { select.innerHTML = "<option>No examples bundled</option>"; return; }
     select.innerHTML = examples
-      .map((e, i) => `<option value="${i}">${esc(e.company.name)} — ${esc(e.file)}</option>`)
-      .join("");
+      .map((e, i) => `<option value="${i}">${esc(e.company.name)} — ${esc(e.file)}</option>`).join("");
     select.onchange = () => { $("record").value = JSON.stringify(examples[select.value].company, null, 2); };
     select.onchange();
   } catch {
@@ -168,190 +723,107 @@ async function loadExamples() {
   }
 }
 
-function parseOverrides(text) {
-  const out = {};
-  for (const pair of text.split(",").map((s) => s.trim()).filter(Boolean)) {
-    const idx = pair.indexOf("=");
-    if (idx < 0) throw new Error(`malformed override "${pair}" — expected key=value`);
-    const key = pair.slice(0, idx).trim();
-    const raw = pair.slice(idx + 1).trim();
-    const num = Number(raw);
-    out[key] = raw !== "" && !Number.isNaN(num) ? num : raw;
-  }
-  return out;
+async function loadCapabilities() {
+  try {
+    const caps = await (await fetch("/api/capabilities")).json();
+    if (!caps.research_available) {
+      $("research").disabled = true;
+      $("research-why").textContent =
+        "Unavailable: set ANTHROPIC_API_KEY on the server to enable. The deterministic sector screen is used instead.";
+    }
+  } catch { /* capability probe is best-effort */ }
+}
+
+/* Staged progress. A live run reads dozens of filings, so silence for 20s
+   reads as a hang; naming the current stage makes the wait legible. */
+const STAGES = [
+  "Resolving the candidate universe…",
+  "Reading SEC filings for each comparable…",
+  "Building enterprise values and multiples…",
+  "Running the valuation methods…",
+  "Stress-testing the assumptions…",
+];
+
+function startLoading() {
+  const t0 = Date.now();
+  $("results").innerHTML =
+    `<div class="card loading"><div class="spinner"></div>
+       <div class="what" id="what">${STAGES[0]}</div>
+       <div class="elapsed num" id="elapsed">0s elapsed</div></div>`;
+  let stage = 0;
+  return setInterval(() => {
+    const s = Math.round((Date.now() - t0) / 1000);
+    const el = $("elapsed"), what = $("what");
+    if (el) el.textContent = `${s}s elapsed` + (s > 8 ? " · live runs read filings one company at a time" : "");
+    if (what && s >= (stage + 1) * 4 && stage < STAGES.length - 1) what.textContent = STAGES[++stage];
+  }, 250);
 }
 
 async function run() {
-  const button = $("run"), status = $("status"), results = $("results");
+  const button = $("run"), status = $("status");
   let company, overrides;
   try {
     company = JSON.parse($("record").value);
     overrides = parseOverrides($("overrides").value);
   } catch (err) {
-    results.innerHTML = `<div class="panel error">Invalid input: ${esc(err.message)}</div>`;
+    $("results").innerHTML = `<div class="card"><div class="banner bad"><b>Invalid input</b>${esc(err.message)}</div></div>`;
     return;
   }
 
-  button.disabled = true; status.textContent = "Running…";
+  button.disabled = true;
+  status.textContent = "";
+  const ticker = startLoading();
+
   try {
     const response = await fetch("/api/valuations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company, as_of: $("asof").value || null, overrides }),
+      body: JSON.stringify({
+        company,
+        as_of: $("asof").value || null,
+        overrides,
+        data_mode: $("mode").value,
+        research: $("research").checked,
+      }),
     });
     const payload = await response.json();
     if (!response.ok) {
-      const detail = typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail, null, 2);
-      results.innerHTML = `<div class="panel error"><strong>Valuation failed (${response.status})</strong><pre>${esc(detail)}</pre></div>`;
-      status.textContent = "";
+      const detail = typeof payload.detail === "string"
+        ? payload.detail : JSON.stringify(payload.detail, null, 2);
+      $("results").innerHTML = `<div class="card"><div class="banner bad">
+        <b>Valuation failed &mdash; HTTP ${response.status}</b>
+        <pre>${esc(detail)}</pre></div></div>`;
       return;
     }
     render(payload);
     status.textContent = "Complete.";
   } catch (err) {
-    results.innerHTML = `<div class="panel error">Request failed: ${esc(err.message)}</div>`;
-    status.textContent = "";
+    $("results").innerHTML = `<div class="card"><div class="banner bad"><b>Request failed</b>${esc(err.message)}</div></div>`;
   } finally {
+    clearInterval(ticker);
     button.disabled = false;
   }
 }
 
-// ---- rendering ------------------------------------------------------------
-
-function render(report) {
-  const blocks = [
-    conclusionBlock(report),
-    methodsBlock(report),
-    reviewQueueBlock(report),
-    exceptionsBlock(report),
-    detailBlocks(report),
-    skippedBlock(report),
-    sourcesBlock(report),
-  ];
-  $("results").innerHTML = blocks.filter(Boolean).join("");
+/* ---------- theme ------------------------------------------------------- */
+const THEME_KEY = "vc-audit-theme";
+function applyTheme(mode) {
+  if (mode) document.documentElement.setAttribute("data-theme", mode);
+  else document.documentElement.removeAttribute("data-theme");
 }
-
-function conclusionBlock(r) {
-  const c = r.concordance;
-  return `<div class="panel">
-    <h2>Conclusion — ${esc(r.company_name)}, ${esc(r.as_of)}</h2>
-    <div class="headline">${usd(r.concluded_value_usd)}</div>
-    <div class="range">Range ${usd(r.concluded_range.low_usd)} – ${usd(r.concluded_range.high_usd)}
-      &nbsp;·&nbsp; <span class="badge ${esc(c.agreement)}">${esc(c.agreement)}</span>
-      &nbsp; CV ${pct(c.coefficient_of_variation)}</div>
-    <div class="narrative">${esc(r.narrative)}</div>
-    <div class="narrative fp">run ${esc(r.run_id)} · fingerprint ${esc(r.fingerprint)}</div>
-  </div>`;
-}
-
-function methodsBlock(r) {
-  const rows = r.method_results.map((m) => `<tr>
-      <td>${esc(m.method_name)}</td>
-      <td class="num">${usd(m.equity_value_usd)}</td>
-      <td class="num">${usdShort(m.value_range.low_usd)} – ${usdShort(m.value_range.high_usd)}</td>
-      <td class="num">${m.sensitivity?.rows?.length ? esc(topDriver(m).label) : "—"}</td>
-    </tr>`).join("");
-  return `<div class="panel"><h2>Methods applied</h2><div class="scroll"><table>
-    <tr><th>Method</th><th class="num">Value</th><th class="num">Range</th><th class="num">Most sensitive to</th></tr>
-    ${rows}</table></div></div>`;
-}
-
-const topDriver = (m) => [...m.sensitivity.rows].sort(
-  (a, b) => Math.abs(b.high_value_usd - b.low_value_usd) - Math.abs(a.high_value_usd - a.low_value_usd)
-)[0];
-
-function reviewQueueBlock(r) {
-  const rows = r.method_results.flatMap((m) =>
-    m.trail.assumptions.filter((a) => a.origin === "engine_default").map((a) => `<tr>
-      <td><code>${esc(m.method_id)}.${esc(a.key)}</code></td>
-      <td class="num">${byUnit(a.value, a.unit)}</td>
-      <td>${esc(a.rationale)}</td></tr>`));
-  if (!rows.length) return "";
-  return `<div class="panel"><h2>Assumption review queue — ${rows.length} engine default(s)</h2>
-    <div class="scroll"><table>
-    <tr><th>Assumption</th><th class="num">Applied</th><th>Rationale</th></tr>${rows.join("")}</table></div></div>`;
-}
-
-function exceptionsBlock(r) {
-  const warnings = [
-    ...r.engine_trail.warnings,
-    ...r.method_results.flatMap((m) => m.trail.warnings.map((w) => `[${m.method_id}] ${w}`)),
-  ];
-  if (!warnings.length) return "";
-  return `<div class="panel"><h2>Exceptions</h2>
-    <ol class="exceptions">${warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ol></div>`;
-}
-
-function detailBlocks(r) {
-  return `<div class="panel"><h2>Calculation trails</h2>${r.method_results.map(methodDetail).join("")}</div>`;
-}
-
-function methodDetail(m) {
-  const steps = m.trail.steps.map((s) => `<tr>
-      <td class="num">${s.seq}</td>
-      <td>${esc(s.description)}</td>
-      <td><code>${esc(s.formula)}</code></td>
-      <td class="num">${esc(stepOutput(s))}</td>
-    </tr>`).join("");
-
-  let sensitivity = "";
-  if (m.sensitivity?.rows?.length) {
-    const widest = Math.max(...m.sensitivity.rows.map((x) => Math.abs(x.high_value_usd - x.low_value_usd)));
-    const rows = [...m.sensitivity.rows]
-      .sort((a, b) => Math.abs(b.high_value_usd - b.low_value_usd) - Math.abs(a.high_value_usd - a.low_value_usd))
-      .map((x) => {
-        const swing = Math.abs(x.high_value_usd - x.low_value_usd);
-        return `<tr>
-          <td>${esc(x.label)}</td>
-          <td class="num">${byUnit(x.low_input, x.unit)} → ${byUnit(x.high_input, x.unit)}</td>
-          <td class="num">${usdShort(x.low_value_usd)} – ${usdShort(x.high_value_usd)}</td>
-          <td><div class="bar" style="width:${widest ? (swing / widest) * 100 : 0}%"></div></td>
-          <td class="num">${usdShort(swing)}</td></tr>`;
-      }).join("");
-    sensitivity = `<h2 style="margin-top:18px">Sensitivity</h2><div class="scroll"><table>
-      <tr><th>Assumption</th><th class="num">Tested band</th><th class="num">Resulting value</th><th>Influence</th><th class="num">Swing</th></tr>
-      ${rows}</table></div>`;
-  }
-
-  return `<details>
-    <summary>${esc(m.method_name)} <span class="val">${usd(m.equity_value_usd)}</span></summary>
-    <div class="body">
-      <p class="range">${esc(m.narrative)}</p>
-      <div class="scroll"><table>
-        <tr><th class="num">#</th><th>Step</th><th>Calculation</th><th class="num">Result</th></tr>
-        ${steps}</table></div>
-      ${sensitivity}
-    </div></details>`;
-}
-
-function skippedBlock(r) {
-  if (!r.skipped_methods.length) return "";
-  const rows = r.skipped_methods.map((s) => `<tr>
-    <td>${esc(s.method_name)}</td><td>${esc(s.reason)}</td><td><code>${esc(s.error_type)}</code></td></tr>`).join("");
-  return `<div class="panel"><h2>Methods not applied</h2><div class="scroll"><table>
-    <tr><th>Method</th><th>Reason</th><th>Error</th></tr>${rows}</table></div></div>`;
-}
-
-function sourcesBlock(r) {
-  const seen = new Map();
-  for (const trail of [r.engine_trail, ...r.method_results.map((m) => m.trail)]) {
-    for (const step of trail.steps) {
-      for (const src of step.sources || []) seen.set(`${src.provider}|${src.dataset}|${src.as_of}`, src);
-    }
-  }
-  if (!seen.size) return "";
-  const rows = [...seen.values()].map((s) => `<tr>
-    <td>${esc(s.provider)}</td><td><code>${esc(s.dataset)}</code></td>
-    <td>${esc(s.as_of)}</td><td>${esc(s.note || "")}</td></tr>`).join("");
-  return `<div class="panel"><h2>Data sources</h2><div class="scroll"><table>
-    <tr><th>Provider</th><th>Dataset</th><th>As of</th><th>Note</th></tr>${rows}</table></div>
-    <div class="hint">Market data is served from checked-in fixtures standing in for a vendor feed;
-      the comparable universe is synthetic.</div></div>`;
-}
+$("theme").onclick = () => {
+  const current = document.documentElement.getAttribute("data-theme");
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = current ? (current === "dark" ? "light" : null) : (dark ? "light" : "dark");
+  applyTheme(next);
+  if (next) localStorage.setItem(THEME_KEY, next); else localStorage.removeItem(THEME_KEY);
+};
+applyTheme(localStorage.getItem(THEME_KEY));
 
 $("run").onclick = run;
-$("asof").value = "2026-08-22";
+$("asof").value = new Date().toISOString().slice(0, 10);
 loadExamples();
+loadCapabilities();
 </script>
 </body>
 </html>

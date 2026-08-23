@@ -22,17 +22,19 @@ from fastapi.staticfiles import StaticFiles
 
 from vc_audit import engine
 from vc_audit.api.schemas import (
+    ExcludedPeerInfo,
     MethodInfo,
     PeerInfo,
     PeerScreenResponse,
     RunSummary,
     ValuationRequest,
 )
-from vc_audit.data.mock_provider import MockMarketDataProvider
+from vc_audit.data.factory import build_provider
 from vc_audit.domain.errors import FatalError, VcAuditError
 from vc_audit.domain.models import ValuationReport
 from vc_audit.methods.registry import all_methods
 from vc_audit.reporting import evidence, memo
+from vc_audit.research import build_researcher, research_available
 
 STATIC_DIR = Path(__file__).parent / "static"
 OUTPUT_DIR = Path("out")
@@ -64,6 +66,16 @@ def index() -> FileResponse:
 def healthz() -> dict[str, str]:
     """Liveness probe."""
     return {"status": "ok"}
+
+
+@app.get("/api/capabilities", tags=["ops"])
+def capabilities() -> dict[str, object]:
+    """What this deployment can do, so the UI can offer only what will work."""
+    return {
+        "research_available": research_available(),
+        "data_modes": ["auto", "live", "fixtures"],
+        "default_data_mode": "auto",
+    }
 
 
 @app.get("/api/methods", response_model=list[MethodInfo], tags=["methods"])
@@ -108,16 +120,25 @@ def screen_peers(
     sector: str = Query(description="Sector to screen, e.g. 'saas'."),
     revenue: float | None = Query(default=None, description="Subject LTM revenue for size band."),
     size_band: float = Query(default=500.0, description="Revenue band either side of subject."),
+    as_of: date | None = Query(default=None, description="Screen date; defaults to today."),
+    data: str = Query(default="auto", description="Data source: auto, live or fixtures."),
 ) -> PeerScreenResponse:
     """Run the comparability screen on its own, without valuing anything."""
-    provider = MockMarketDataProvider()
     try:
-        peers, source = provider.get_peers(
-            sector=sector, subject_revenue_usd=revenue, size_band=size_band
+        provider = build_provider(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        screen = provider.get_peers(
+            sector=sector,
+            as_of=as_of or date.today(),
+            subject_revenue_usd=revenue,
+            size_band=size_band,
         )
     except VcAuditError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    peers, source = screen.peers, screen.source
     if not peers:
         raise HTTPException(
             status_code=404,
@@ -137,17 +158,34 @@ def screen_peers(
                 enterprise_value_usd=peer.enterprise_value_usd,
                 ltm_revenue_usd=peer.ltm_revenue_usd,
                 ev_to_revenue=peer.ev_to_revenue,
+                inclusion_rationale=peer.inclusion_rationale,
+                filing_url=peer.latest_filing.url if peer.latest_filing else None,
+                filing_label=peer.latest_filing.cite() if peer.latest_filing else None,
             )
             for peer in peers
         ],
+        excluded=[
+            ExcludedPeerInfo(ticker=e.ticker, stage=e.stage, reason=e.reason)
+            for e in screen.excluded
+        ],
+        universe_size=screen.universe_size,
         citation=source.cite(),
+        provider=provider.describe(),
     )
 
 
 @app.post("/api/valuations", response_model=ValuationReport, tags=["valuations"])
 def create_valuation(request: ValuationRequest) -> ValuationReport:
     """Value a company and return the conclusion with its full audit trail."""
-    provider = MockMarketDataProvider()
+    try:
+        provider = build_provider(request.data_mode)
+        researcher = build_researcher(request.research)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # Research was asked for but cannot run -- a 503, since the client's
+        # request is well-formed and the server is the thing that is missing.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     try:
         report = engine.value_company(
             request.company,
@@ -156,6 +194,7 @@ def create_valuation(request: ValuationRequest) -> ValuationReport:
             methods=request.methods,
             overrides=request.overrides,
             run_sensitivity=request.run_sensitivity,
+            researcher=researcher,
         )
     except FatalError as exc:
         # The inputs are structurally valid but cannot support a valuation --

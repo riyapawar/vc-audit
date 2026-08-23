@@ -26,13 +26,14 @@ from rich.console import Console
 from rich.table import Table
 
 from vc_audit import engine
-from vc_audit.data.mock_provider import MockMarketDataProvider
+from vc_audit.data.factory import build_provider
 from vc_audit.domain.errors import VcAuditError
 from vc_audit.loader import load_company, parse_overrides
 from vc_audit.methods.registry import all_methods, eligibility_report
 from vc_audit.reporting import console as console_report
 from vc_audit.reporting import evidence, memo
 from vc_audit.reporting.formatting import money, multiple
+from vc_audit.research import build_researcher
 
 app = typer.Typer(
     name="vc-audit",
@@ -81,11 +82,28 @@ def value(
     markdown: Annotated[
         bool, typer.Option("--markdown", help="Emit the Markdown memo instead of a table.")
     ] = False,
+    data: Annotated[
+        str,
+        typer.Option(
+            "--data",
+            help="Data source: auto (live, fixtures on failure), live, or fixtures.",
+        ),
+    ] = "auto",
+    research: Annotated[
+        bool,
+        typer.Option(
+            "--research/--no-research",
+            help=(
+                "Use a language model to propose and vet comparables. Needs "
+                "ANTHROPIC_API_KEY. Off by default so runs stay reproducible."
+            ),
+        ),
+    ] = False,
     simulate_outage: Annotated[
         list[str] | None,
         typer.Option(
             "--simulate-outage",
-            help="Force a data source to fail, e.g. public_comps. Demonstrates degradation.",
+            help="Force a fixture dataset to fail, e.g. public_comps. Demonstrates degradation.",
         ),
     ] = None,
 ) -> None:
@@ -98,7 +116,10 @@ def value(
     try:
         company = load_company(company_file)
         overrides = parse_overrides(set_ or [])
-        provider = MockMarketDataProvider(simulate_outage_for=set(simulate_outage or []))
+        provider = build_provider(
+            data, simulate_outage_for=set(simulate_outage or []) or None
+        )
+        researcher = build_researcher(research)
         report = engine.value_company(
             company,
             provider=provider,
@@ -106,10 +127,11 @@ def value(
             methods=method or None,
             overrides=overrides,
             run_sensitivity=sensitivity,
+            researcher=researcher,
         )
     except VcAuditError as exc:
         _fail(str(exc))
-    except ValueError as exc:
+    except (ValueError, RuntimeError) as exc:
         _fail(str(exc))
 
     if json_out:
@@ -189,17 +211,33 @@ def peers(
     size_band: Annotated[
         float, typer.Option("--size-band", help="Revenue band multiplier either side of subject.")
     ] = 500.0,
+    as_of: Annotated[
+        str | None, typer.Option("--as-of", help="Screen date (YYYY-MM-DD). Defaults to today.")
+    ] = None,
+    data: Annotated[
+        str, typer.Option("--data", help="Data source: auto, live, or fixtures.")
+    ] = "auto",
 ) -> None:
     """Show the comparable-company screen on its own, before any valuation runs."""
-    provider = MockMarketDataProvider()
     try:
-        found, source = provider.get_peers(
-            sector=sector, subject_revenue_usd=revenue, size_band=size_band
+        screen_date = date.fromisoformat(as_of) if as_of else date.today()
+    except ValueError:
+        _fail(f"'{as_of}' is not a valid date; expected YYYY-MM-DD")
+
+    try:
+        provider = build_provider(data)
+        screen = provider.get_peers(
+            sector=sector,
+            as_of=screen_date,
+            subject_revenue_usd=revenue,
+            size_band=size_band,
         )
     except VcAuditError as exc:
         _fail(str(exc))
+    except ValueError as exc:
+        _fail(str(exc))
 
-    if not found:
+    if not screen.peers:
         available = ", ".join(provider.known_sectors())
         _fail(f"no peers found for sector '{sector}'; available sectors: {available}")
 
@@ -210,7 +248,8 @@ def peers(
     table.add_column("Enterprise value", justify="right")
     table.add_column("LTM revenue", justify="right")
     table.add_column("EV/Revenue", justify="right")
-    for peer in found:
+    table.add_column("Filing")
+    for peer in screen.peers:
         table.add_row(
             peer.ticker,
             peer.name,
@@ -218,9 +257,24 @@ def peers(
             money(peer.enterprise_value_usd),
             money(peer.ltm_revenue_usd),
             multiple(peer.ev_to_revenue),
+            peer.latest_filing.cite() if peer.latest_filing else "—",
         )
     console.print(table)
-    console.print(f"[dim]{source.cite()}[/]")
+
+    if screen.excluded:
+        rejected = Table(
+            title=f"Candidates rejected ({len(screen.excluded)})",
+            title_justify="left",
+        )
+        rejected.add_column("Ticker")
+        rejected.add_column("Stage")
+        rejected.add_column("Reason")
+        for exclusion in screen.excluded:
+            rejected.add_row(exclusion.ticker, exclusion.stage, exclusion.reason)
+        console.print(rejected)
+
+    console.print(f"[dim]{screen.source.cite()}[/]")
+    console.print(f"[dim]{provider.describe()}[/]")
 
 
 @app.command()

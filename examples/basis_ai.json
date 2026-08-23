@@ -2,17 +2,14 @@
   "name": "Basis AI",
   "sector": "saas",
   "currency": "USD",
-
+  "business_description": "Enterprise SaaS platform selling AI-assisted document review to mid-market legal and compliance teams. Annual per-seat subscriptions, land-and-expand motion, high gross margin, no professional-services revenue.",
   "ltm_revenue_usd": 10000000,
   "ltm_ebitda_usd": -2000000,
-
   "cash_usd": 18000000,
   "debt_usd": 4000000,
-
   "last_post_money_valuation_usd": 120000000,
   "last_round_date": "2022-03-31",
   "last_round_series": "Series B",
-
   "projections_source": {
     "provider": "internal",
     "dataset": "board_pack_q3_2025",

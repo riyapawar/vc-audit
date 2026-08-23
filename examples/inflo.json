@@ -2,13 +2,11 @@
   "name": "Inflo",
   "sector": "fintech",
   "currency": "USD",
-
+  "business_description": "B2B payments and spend-management platform for small and mid-sized businesses. Revenue is a mix of SaaS subscription and interchange on card volume.",
   "ltm_revenue_usd": 42000000,
   "ltm_ebitda_usd": 3100000,
-
   "cash_usd": 30000000,
   "debt_usd": 6000000,
-
   "last_post_money_valuation_usd": 165000000,
   "last_round_date": "2024-11-30",
   "last_round_series": "Series C"

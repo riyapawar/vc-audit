@@ -9,7 +9,7 @@ what a valid company record is.
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,6 +33,21 @@ class ValuationRequest(BaseModel):
         description="Assumption overrides, keyed bare ('wacc') or qualified ('dcf.wacc').",
     )
     run_sensitivity: bool = True
+    data_mode: Literal["auto", "live", "fixtures"] = Field(
+        default="auto",
+        description=(
+            "Where market data comes from: 'auto' prefers live SEC/quote data and "
+            "discloses any fallback to fixtures, 'live' refuses to substitute, "
+            "'fixtures' stays fully offline."
+        ),
+    )
+    research: bool = Field(
+        default=False,
+        description=(
+            "Use a language model to propose and vet comparables. Requires "
+            "ANTHROPIC_API_KEY on the server. Off by default so runs stay reproducible."
+        ),
+    )
     persist: bool = Field(
         default=True,
         description="Write an evidence pack so the run can be reopened by run_id.",
@@ -60,7 +75,7 @@ class RunSummary(BaseModel):
 
 
 class PeerInfo(BaseModel):
-    """A public comparable, with its derived multiple."""
+    """A public comparable, with its derived multiple and its filing citation."""
 
     ticker: str
     name: str
@@ -69,14 +84,30 @@ class PeerInfo(BaseModel):
     enterprise_value_usd: float
     ltm_revenue_usd: float
     ev_to_revenue: float
+    inclusion_rationale: str | None = None
+    filing_url: str | None = Field(
+        default=None, description="Link to the 10-K or 10-Q the fundamentals came from."
+    )
+    filing_label: str | None = None
+
+
+class ExcludedPeerInfo(BaseModel):
+    """A candidate that was considered and rejected, with the reason."""
+
+    ticker: str
+    stage: str
+    reason: str
 
 
 class PeerScreenResponse(BaseModel):
-    """Result of a standalone comparability screen."""
+    """Result of a standalone comparability screen, rejections included."""
 
     sector: str
     peers: list[PeerInfo]
+    excluded: list[ExcludedPeerInfo] = Field(default_factory=list)
+    universe_size: int = 0
     citation: str
+    provider: str = ""
 
 
 class ErrorResponse(BaseModel):
