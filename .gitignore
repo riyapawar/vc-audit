@@ -12,5 +12,10 @@ out/
 .DS_Store
 .idea/
 
+# secrets -- never commit an API key
+.env
+.env.*
+!.env.example
+
 # local tooling
 .claude/
