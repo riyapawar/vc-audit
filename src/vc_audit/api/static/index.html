@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VC Audit Tool</title>
+<style>
+  :root {
+    --bg: #f6f7f9;      --panel: #ffffff;   --ink: #16191d;     --muted: #626b78;
+    --line: #dfe3e8;    --accent: #1f5fd0;  --accent-soft: #e8f0fd;
+    --good: #1a7f52;    --warn: #a1670a;    --bad: #b4342c;
+    --code: #f0f2f5;    --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171b;    --panel: #1b1f25;   --ink: #e8eaed;     --muted: #9aa4b2;
+      --line: #2c333c;  --accent: #6a9bff;  --accent-soft: #1c2738;
+      --good: #4fbc86;  --warn: #d9a441;    --bad: #ef6f66;     --code: #22272e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+    background: var(--panel); display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: -0.01em; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header a { color: var(--accent); font-size: 13px; margin-left: auto; }
+  main { display: grid; grid-template-columns: 380px 1fr; gap: 20px; padding: 20px; align-items: start; }
+  @media (max-width: 940px) { main { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+  .panel + .panel { margin-top: 16px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; font-weight: 600; }
+  select, input, textarea, button {
+    width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+  }
+  textarea { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px; min-height: 260px; resize: vertical; }
+  button.primary {
+    background: var(--accent); color: #fff; border: none; font-weight: 600;
+    padding: 11px; margin-top: 16px; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .55; cursor: progress; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  .headline { font-size: 34px; font-weight: 650; letter-spacing: -0.02em; margin: 2px 0 4px; }
+  .range { color: var(--muted); font-size: 14px; }
+  .narrative { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px;
+           font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .badge.tight { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+  .badge.moderate, .badge['single-method'] { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .badge.wide { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 12px;
+         font-family: ui-monospace, Consolas, monospace; }
+  .scroll { overflow-x: auto; }
+
+  details { border: 1px solid var(--line); border-radius: var(--radius); margin-top: 10px; background: var(--panel); }
+  details > summary { cursor: pointer; padding: 12px 16px; font-weight: 600; display: flex;
+                      gap: 12px; align-items: baseline; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::before { content: "▸"; color: var(--muted); }
+  details[open] > summary::before { content: "▾"; }
+  details > summary .val { margin-left: auto; font-variant-numeric: tabular-nums; }
+  details .body { padding: 0 16px 16px; }
+
+  ol.exceptions { margin: 0; padding-left: 20px; font-size: 13.5px; }
+  ol.exceptions li { margin-bottom: 7px; }
+  .bar { height: 7px; background: var(--accent); border-radius: 3px; min-width: 2px; }
+  .fp { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--muted); word-break: break-all; }
+  .error { border-left: 3px solid var(--bad); padding-left: 12px; color: var(--bad); }
+  .empty { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>VC Audit Tool</h1>
+  <span class="sub">Fair value estimation for private portfolio companies — every number traceable</span>
+  <a href="/docs">API docs →</a>
+</header>
+
+<main>
+  <section>
+    <div class="panel">
+      <h2>Subject company</h2>
+      <label for="example">Load an example</label>
+      <select id="example"></select>
+
+      <label for="record">Company record (JSON)</label>
+      <textarea id="record" spellcheck="false"></textarea>
+
+      <label for="asof">Valuation date</label>
+      <input id="asof" type="date">
+
+      <label for="overrides">Assumption overrides</label>
+      <input id="overrides" placeholder="wacc=0.18, illiquidity_discount=0.25">
+      <div class="hint">Comma-separated <code>key=value</code>. Qualify per method with <code>dcf.wacc</code>.</div>
+
+      <button class="primary" id="run">Run valuation</button>
+      <div class="hint" id="status"></div>
+    </div>
+  </section>
+
+  <section id="results">
+    <div class="panel empty">Load an example and run a valuation to see the audit trail.</div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const usd = (n) => n == null ? "n/a" : "$" + Math.round(n).toLocaleString("en-US");
+const usdShort = (n) => {
+  if (n == null) return "n/a";
+  const a = Math.abs(n);
+  if (a >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
+  if (a >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M";
+  if (a >= 1e3) return "$" + (n / 1e3).toFixed(0) + "K";
+  return "$" + n.toFixed(0);
+};
+const pct = (n, d = 1) => n == null ? "n/a" : (n * 100).toFixed(d) + "%";
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+const byUnit = (v, unit) => {
+  if (typeof v !== "number") return typeof v === "object" ? JSON.stringify(v) : esc(v);
+  if (unit === "usd") return usd(v);
+  if (unit === "percent") return pct(v, 2);
+  if (unit === "multiple") return v.toFixed(2) + "x";
+  if (unit === "ratio") return v.toFixed(2);
+  return Math.abs(v) >= 1000 ? Math.round(v).toLocaleString("en-US") : String(v);
+};
+
+const stepOutput = (step) => {
+  if (step.output && typeof step.output === "object") {
+    const entries = Array.isArray(step.output)
+      ? step.output.map((v) => byUnit(v, step.unit))
+      : Object.entries(step.output).map(([k, v]) => `${k}=${byUnit(v, step.unit)}`);
+    return entries.join(", ");
+  }
+  return byUnit(step.output, step.unit);
+};
+
+// ---- input handling -------------------------------------------------------
+
+async function loadExamples() {
+  const select = $("example");
+  try {
+    const examples = await (await fetch("/api/examples")).json();
+    if (!examples.length) { select.innerHTML = "<option>No examples bundled</option>"; return; }
+    select.innerHTML = examples
+      .map((e, i) => `<option value="${i}">${esc(e.company.name)} — ${esc(e.file)}</option>`)
+      .join("");
+    select.onchange = () => { $("record").value = JSON.stringify(examples[select.value].company, null, 2); };
+    select.onchange();
+  } catch {
+    select.innerHTML = "<option>Could not load examples</option>";
+  }
+}
+
+function parseOverrides(text) {
+  const out = {};
+  for (const pair of text.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const idx = pair.indexOf("=");
+    if (idx < 0) throw new Error(`malformed override "${pair}" — expected key=value`);
+    const key = pair.slice(0, idx).trim();
+    const raw = pair.slice(idx + 1).trim();
+    const num = Number(raw);
+    out[key] = raw !== "" && !Number.isNaN(num) ? num : raw;
+  }
+  return out;
+}
+
+async function run() {
+  const button = $("run"), status = $("status"), results = $("results");
+  let company, overrides;
+  try {
+    company = JSON.parse($("record").value);
+    overrides = parseOverrides($("overrides").value);
+  } catch (err) {
+    results.innerHTML = `<div class="panel error">Invalid input: ${esc(err.message)}</div>`;
+    return;
+  }
+
+  button.disabled = true; status.textContent = "Running…";
+  try {
+    const response = await fetch("/api/valuations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company, as_of: $("asof").value || null, overrides }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const detail = typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail, null, 2);
+      results.innerHTML = `<div class="panel error"><strong>Valuation failed (${response.status})</strong><pre>${esc(detail)}</pre></div>`;
+      status.textContent = "";
+      return;
+    }
+    render(payload);
+    status.textContent = "Complete.";
+  } catch (err) {
+    results.innerHTML = `<div class="panel error">Request failed: ${esc(err.message)}</div>`;
+    status.textContent = "";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// ---- rendering ------------------------------------------------------------
+
+function render(report) {
+  const blocks = [
+    conclusionBlock(report),
+    methodsBlock(report),
+    reviewQueueBlock(report),
+    exceptionsBlock(report),
+    detailBlocks(report),
+    skippedBlock(report),
+    sourcesBlock(report),
+  ];
+  $("results").innerHTML = blocks.filter(Boolean).join("");
+}
+
+function conclusionBlock(r) {
+  const c = r.concordance;
+  return `<div class="panel">
+    <h2>Conclusion — ${esc(r.company_name)}, ${esc(r.as_of)}</h2>
+    <div class="headline">${usd(r.concluded_value_usd)}</div>
+    <div class="range">Range ${usd(r.concluded_range.low_usd)} – ${usd(r.concluded_range.high_usd)}
+      &nbsp;·&nbsp; <span class="badge ${esc(c.agreement)}">${esc(c.agreement)}</span>
+      &nbsp; CV ${pct(c.coefficient_of_variation)}</div>
+    <div class="narrative">${esc(r.narrative)}</div>
+    <div class="narrative fp">run ${esc(r.run_id)} · fingerprint ${esc(r.fingerprint)}</div>
+  </div>`;
+}
+
+function methodsBlock(r) {
+  const rows = r.method_results.map((m) => `<tr>
+      <td>${esc(m.method_name)}</td>
+      <td class="num">${usd(m.equity_value_usd)}</td>
+      <td class="num">${usdShort(m.value_range.low_usd)} – ${usdShort(m.value_range.high_usd)}</td>
+      <td class="num">${m.sensitivity?.rows?.length ? esc(topDriver(m).label) : "—"}</td>
+    </tr>`).join("");
+  return `<div class="panel"><h2>Methods applied</h2><div class="scroll"><table>
+    <tr><th>Method</th><th class="num">Value</th><th class="num">Range</th><th class="num">Most sensitive to</th></tr>
+    ${rows}</table></div></div>`;
+}
+
+const topDriver = (m) => [...m.sensitivity.rows].sort(
+  (a, b) => Math.abs(b.high_value_usd - b.low_value_usd) - Math.abs(a.high_value_usd - a.low_value_usd)
+)[0];
+
+function reviewQueueBlock(r) {
+  const rows = r.method_results.flatMap((m) =>
+    m.trail.assumptions.filter((a) => a.origin === "engine_default").map((a) => `<tr>
+      <td><code>${esc(m.method_id)}.${esc(a.key)}</code></td>
+      <td class="num">${byUnit(a.value, a.unit)}</td>
+      <td>${esc(a.rationale)}</td></tr>`));
+  if (!rows.length) return "";
+  return `<div class="panel"><h2>Assumption review queue — ${rows.length} engine default(s)</h2>
+    <div class="scroll"><table>
+    <tr><th>Assumption</th><th class="num">Applied</th><th>Rationale</th></tr>${rows.join("")}</table></div></div>`;
+}
+
+function exceptionsBlock(r) {
+  const warnings = [
+    ...r.engine_trail.warnings,
+    ...r.method_results.flatMap((m) => m.trail.warnings.map((w) => `[${m.method_id}] ${w}`)),
+  ];
+  if (!warnings.length) return "";
+  return `<div class="panel"><h2>Exceptions</h2>
+    <ol class="exceptions">${warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ol></div>`;
+}
+
+function detailBlocks(r) {
+  return `<div class="panel"><h2>Calculation trails</h2>${r.method_results.map(methodDetail).join("")}</div>`;
+}
+
+function methodDetail(m) {
+  const steps = m.trail.steps.map((s) => `<tr>
+      <td class="num">${s.seq}</td>
+      <td>${esc(s.description)}</td>
+      <td><code>${esc(s.formula)}</code></td>
+      <td class="num">${esc(stepOutput(s))}</td>
+    </tr>`).join("");
+
+  let sensitivity = "";
+  if (m.sensitivity?.rows?.length) {
+    const widest = Math.max(...m.sensitivity.rows.map((x) => Math.abs(x.high_value_usd - x.low_value_usd)));
+    const rows = [...m.sensitivity.rows]
+      .sort((a, b) => Math.abs(b.high_value_usd - b.low_value_usd) - Math.abs(a.high_value_usd - a.low_value_usd))
+      .map((x) => {
+        const swing = Math.abs(x.high_value_usd - x.low_value_usd);
+        return `<tr>
+          <td>${esc(x.label)}</td>
+          <td class="num">${byUnit(x.low_input, x.unit)} → ${byUnit(x.high_input, x.unit)}</td>
+          <td class="num">${usdShort(x.low_value_usd)} – ${usdShort(x.high_value_usd)}</td>
+          <td><div class="bar" style="width:${widest ? (swing / widest) * 100 : 0}%"></div></td>
+          <td class="num">${usdShort(swing)}</td></tr>`;
+      }).join("");
+    sensitivity = `<h2 style="margin-top:18px">Sensitivity</h2><div class="scroll"><table>
+      <tr><th>Assumption</th><th class="num">Tested band</th><th class="num">Resulting value</th><th>Influence</th><th class="num">Swing</th></tr>
+      ${rows}</table></div>`;
+  }
+
+  return `<details>
+    <summary>${esc(m.method_name)} <span class="val">${usd(m.equity_value_usd)}</span></summary>
+    <div class="body">
+      <p class="range">${esc(m.narrative)}</p>
+      <div class="scroll"><table>
+        <tr><th class="num">#</th><th>Step</th><th>Calculation</th><th class="num">Result</th></tr>
+        ${steps}</table></div>
+      ${sensitivity}
+    </div></details>`;
+}
+
+function skippedBlock(r) {
+  if (!r.skipped_methods.length) return "";
+  const rows = r.skipped_methods.map((s) => `<tr>
+    <td>${esc(s.method_name)}</td><td>${esc(s.reason)}</td><td><code>${esc(s.error_type)}</code></td></tr>`).join("");
+  return `<div class="panel"><h2>Methods not applied</h2><div class="scroll"><table>
+    <tr><th>Method</th><th>Reason</th><th>Error</th></tr>${rows}</table></div></div>`;
+}
+
+function sourcesBlock(r) {
+  const seen = new Map();
+  for (const trail of [r.engine_trail, ...r.method_results.map((m) => m.trail)]) {
+    for (const step of trail.steps) {
+      for (const src of step.sources || []) seen.set(`${src.provider}|${src.dataset}|${src.as_of}`, src);
+    }
+  }
+  if (!seen.size) return "";
+  const rows = [...seen.values()].map((s) => `<tr>
+    <td>${esc(s.provider)}</td><td><code>${esc(s.dataset)}</code></td>
+    <td>${esc(s.as_of)}</td><td>${esc(s.note || "")}</td></tr>`).join("");
+  return `<div class="panel"><h2>Data sources</h2><div class="scroll"><table>
+    <tr><th>Provider</th><th>Dataset</th><th>As of</th><th>Note</th></tr>${rows}</table></div>
+    <div class="hint">Market data is served from checked-in fixtures standing in for a vendor feed;
+      the comparable universe is synthetic.</div></div>`;
+}
+
+$("run").onclick = run;
+$("asof").value = "2026-08-22";
+loadExamples();
+</script>
+</body>
+</html>
