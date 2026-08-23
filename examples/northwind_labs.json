@@ -1,0 +1,12 @@
+{
+  "name": "Northwind Labs",
+  "sector": "healthtech",
+  "currency": "USD",
+
+  "cash_usd": 9500000,
+  "debt_usd": 0,
+
+  "last_post_money_valuation_usd": 45000000,
+  "last_round_date": "2021-11-30",
+  "last_round_series": "Series A"
+}
