@@ -49,22 +49,22 @@ it: a conclusion drawn partly from a model the engine knows to be invalid is wor
 
 | Module | Responsibility |
 |---|---|
-| `domain/audit.py` | `AuditTrail`, `Step`, `Assumption`, `SourceRef`, fingerprinting — the spine |
+| `domain/audit.py` | `AuditTrail`, `Step`, `Assumption`, `SourceRef`, fingerprinting. The spine |
 | `domain/models.py` | Company, peers, filings, funnel, ranges, results, report |
 | `domain/errors.py` | Recoverable vs fatal failure taxonomy |
-| `data/base.py` | `MarketDataProvider` protocol + `PeerScreenResult` — the only seam to the outside |
+| `data/base.py` | `MarketDataProvider` protocol + `PeerScreenResult`. The only seam to the outside |
 | `data/sec.py` | EDGAR XBRL: tag resolution, LTM assembly, freshness, filing citations |
 | `data/quotes.py` | Closing prices and index history |
-| `data/universe.py` | Per-sector candidate tickers — the deterministic baseline |
+| `data/universe.py` | Per-sector candidate tickers. The deterministic baseline |
 | `data/live_provider.py` | Builds each peer's EV from its components, or explains why it can't |
 | `data/mock_provider.py` | Fixture-backed provider, with a simulated-outage switch |
 | `data/resilient.py` | Live-first with a **disclosed** fixture fallback |
 | `research/` | Optional model-driven peer proposal and review, fully recorded |
-| `context.py` | `ValuationContext.assume()` — the single assumption accessor |
+| `context.py` | `ValuationContext.assume()`. The single assumption accessor |
 | `methods/` | Plugin contract, `DriverSpec`, the three methodologies, the registry |
 | `sensitivity.py` | Method-agnostic one-at-a-time sweep |
 | `engine.py` | Selection, isolation, reconciliation, concordance, provenance |
-| `reporting/` | Console, Markdown memo, evidence pack — all read, none compute |
+| `reporting/` | Console, Markdown memo, evidence pack. All read, none compute |
 | `cli.py`, `api/` | Two front ends over one engine |
 
 ## Where peer fundamentals come from
@@ -88,7 +88,7 @@ Two XBRL realities shape that code, and both were found by reading real filings:
   discarded, and the freshest fact wins.
 * **Periods overlap.** A 10-K's 12-month figure covers the same span as its quarters, so summing
   naively double-counts. LTM revenue is assembled from four non-overlapping quarters, falling back
-  to the latest annual figure — and says which basis it used.
+  to the latest annual figure, and says which basis it used.
 
 Debt and cash decomposition genuinely varies by filer, so rather than pretend otherwise the
 provider **records the tags it used** (`us-gaap:LongTermDebt @2026-06-30 + us-gaap:ShortTermBorrowings
@@ -103,10 +103,10 @@ between the two is itself evidence:
 | Stage | Meaning |
 |---|---|
 | Considered | The sector universe, plus any research-layer proposals |
-| Dropped — data | No usable filings, no shares outstanding, no price, or non-positive EV |
-| Dropped — not comparable | Outside the size band, or rejected by the research layer |
-| Dropped — outlier | Outside the Tukey fence (`Q1 − 1.5·IQR`, `Q3 + 1.5·IQR`) |
-| Valued against | Minimum of three enforced — a "median" of two is not a market observation |
+| Dropped, no data | No usable filings, no shares outstanding, no price, or non-positive EV |
+| Dropped, not comparable | Outside the size band, or rejected by the research layer |
+| Dropped, outlier | Outside the Tukey fence (`Q1 − 1.5·IQR`, `Q3 + 1.5·IQR`) |
+| Valued against | Minimum of three enforced. A "median" of two is not a market observation |
 
 Every rejection carries a specific reason and appears in the memo and the UI.
 
@@ -123,7 +123,7 @@ Gordon terminal value. WACC at or below terminal growth is fatal. Terminal-value
 measured, and past 75% of EV the run raises an exception: the "discounted cash flow" is really a
 perpetuity assumption wearing a forecast.
 
-**Last Round.** The only observed transaction price in the company's own securities — an
+**Last Round.** The only observed transaction price in the company's own securities, an
 observation where the other two are inferences. Its weakness is staleness, and the index adjustment
 is the correction. The index is sector-matched (marking 2022 software to the broad composite badly
 understates the drawdown) and recorded as an overridable assumption. Rounds older than two years
@@ -132,14 +132,14 @@ marked (β = 1).
 
 ## The research layer
 
-Off by default. A sector tag is blunt — "SaaS" contains both a 90%-margin infrastructure business
-and a services-heavy implementation shop — and judging which businesses genuinely resemble each
+Off by default. A sector tag is blunt. "SaaS" contains both a 90%-margin infrastructure business
+and a services-heavy implementation shop, and judging which businesses genuinely resemble each
 other is what a language model is good at. Two rules make that admissible:
 
 * **The model judges; Python calculates.** It may propose tickers and argue comparability. It never
   produces a number. Every figure is computed from filings.
 * **Every call is an audit step** carrying the model id, effort, token usage, and the SHA-256 of the
-  exact prompt — so a reviewer can see that a machine made a judgement, which machine, and on what
+  exact prompt, so a reviewer can see that a machine made a judgement, which machine, and on what
   input.
 
 Proposals are *added* to the standing universe, never substituted for it; the model sees each peer's
@@ -155,10 +155,10 @@ Dispersion is the coefficient of variation across method conclusions:
 
 | CV | Classification | Meaning |
 |---|---|---|
-| ≤ 10% | tight | Independent methods converging — real corroboration |
-| ≤ 25% | moderate | Normal for a private company; quote the range |
-| > 25% | wide | **Exception raised.** Reconcile before booking — a weighted average of conflicting evidence is not evidence |
-| — | single-method | Uncorroborated; rests on one method's assumptions |
+| At or below 10% | tight | Independent methods converging, which is real corroboration |
+| At or below 25% | moderate | Normal for a private company; quote the range |
+| Above 25% | wide | **Exception raised.** Reconcile before booking. A weighted average of conflicting evidence is not evidence |
+| n/a | single-method | Uncorroborated; rests on one method's assumptions |
 
 ## Worked example
 
@@ -167,7 +167,7 @@ vc-audit value examples/basis_ai.json --as-of 2026-08-21 --data live --detail
 ```
 
 Basis AI has complete data, so all three methods run against live SaaS comparables drawn from
-current 10-K/10-Q filings. The run raises six exceptions — wide cross-method dispersion, a terminal
+current 10-K/10-Q filings. The run raises six exceptions: wide cross-method dispersion, a terminal
 value at 83% of enterprise value, a round that closed 4.4 years ago, and a peer excluded at 28x
 revenue among them.
 
@@ -182,7 +182,7 @@ flagged uncorroborated).
 
 `run_id` is a UUIDv5 over the canonical inputs; the fingerprint is a SHA-256 over every trail. Same
 inputs and same code produce the same memo byte for byte, so a reviewer can diff quarters and see
-only real changes. Memos carry no generation timestamp — it would make two identical valuations diff
+only real changes. Memos carry no generation timestamp, because it would make two identical valuations diff
 as different.
 
 With `--data fixtures` a run is fully offline and deterministic. With live data and a **past**
