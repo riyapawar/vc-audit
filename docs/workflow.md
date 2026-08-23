@@ -1,7 +1,7 @@
 # Architecture and workflow
 
-Companion to the [README](../README.md). This document covers how the pieces fit together, what
-each valuation method actually does, and a worked example end to end.
+Companion to the [README](../README.md): how the pieces fit together, what each method does, and a
+worked example end to end.
 
 ## Data flow
 
@@ -10,18 +10,25 @@ flowchart TD
     A["Company record (JSON)"] --> B["loader.load_company<br/>Pydantic validation"]
     B --> C{"engine.value_company"}
     C --> D["Method selection<br/>which methods do the inputs support?"]
-    D -->|eligible| E["Method plugins"]
     D -->|ineligible| S["MethodSkip<br/>recorded with reason"]
+    D -->|eligible| M
 
     subgraph M["Each method, in isolation"]
-        E --> E1["Comps"]
-        E --> E2["DCF"]
-        E --> E3["Last Round"]
+        E1["Comps"]
+        E2["DCF"]
+        E3["Last Round"]
     end
 
-    P["MarketDataProvider<br/>(fixtures today, vendor feed tomorrow)"] -.-> M
-    M -->|"every step recorded"| T[("AuditTrail<br/>steps · assumptions · warnings · sources")]
+    subgraph P["MarketDataProvider"]
+        P1["Live: SEC EDGAR XBRL<br/>+ public quotes"]
+        P2["Fixtures: checked-in JSON"]
+        P1 -. "on failure, disclosed" .-> P2
+    end
+    P --> M
 
+    R["Research layer (optional, off by default)<br/>proposes + vets peers; produces no figures"] -.-> E1
+
+    M -->|"every step recorded"| T[("AuditTrail<br/>steps · assumptions · warnings · sources")]
     M --> F["sensitivity.analyse<br/>re-run per driver, scratch trail"]
     F --> G["Reconciliation<br/>weighted value · combined range · concordance"]
     S --> G
@@ -35,115 +42,156 @@ flowchart TD
 ```
 
 Recoverable failures (`DataUnavailableError`, `InsufficientEvidenceError`, `MissingInputError`)
-divert a single method into `MethodSkip` and the run continues. Fatal failures (`AssumptionError`)
-stop the run: a blended conclusion drawn partly from a model the engine knows to be invalid would
-be worse than no answer.
+divert one method into `MethodSkip` and the run continues. Fatal failures (`AssumptionError`) stop
+it: a conclusion drawn partly from a model the engine knows to be invalid is worse than no answer.
 
 ## Module map
 
 | Module | Responsibility |
 |---|---|
 | `domain/audit.py` | `AuditTrail`, `Step`, `Assumption`, `SourceRef`, fingerprinting — the spine |
-| `domain/models.py` | Company, peers, ranges, results, report |
+| `domain/models.py` | Company, peers, filings, funnel, ranges, results, report |
 | `domain/errors.py` | Recoverable vs fatal failure taxonomy |
-| `data/base.py` | `MarketDataProvider` protocol — the only seam to the outside world |
-| `data/mock_provider.py` | Fixture-backed implementation, with a simulated-outage switch |
+| `data/base.py` | `MarketDataProvider` protocol + `PeerScreenResult` — the only seam to the outside |
+| `data/sec.py` | EDGAR XBRL: tag resolution, LTM assembly, freshness, filing citations |
+| `data/quotes.py` | Closing prices and index history |
+| `data/universe.py` | Per-sector candidate tickers — the deterministic baseline |
+| `data/live_provider.py` | Builds each peer's EV from its components, or explains why it can't |
+| `data/mock_provider.py` | Fixture-backed provider, with a simulated-outage switch |
+| `data/resilient.py` | Live-first with a **disclosed** fixture fallback |
+| `research/` | Optional model-driven peer proposal and review, fully recorded |
 | `context.py` | `ValuationContext.assume()` — the single assumption accessor |
-| `methods/base.py` | Plugin contract, `DriverSpec`, shared equity bridge |
-| `methods/{comps,dcf,last_round}.py` | The three methodologies |
-| `methods/registry.py` | The one place that knows which methods exist |
+| `methods/` | Plugin contract, `DriverSpec`, the three methodologies, the registry |
 | `sensitivity.py` | Method-agnostic one-at-a-time sweep |
-| `engine.py` | Selection, isolation, reconciliation, concordance |
+| `engine.py` | Selection, isolation, reconciliation, concordance, provenance |
 | `reporting/` | Console, Markdown memo, evidence pack — all read, none compute |
 | `cli.py`, `api/` | Two front ends over one engine |
 
-## The methods in detail
+## Where peer fundamentals come from
 
-### Comparable Company Analysis
+Most tooling reads a vendor's pre-computed `enterpriseValue` field. That is convenient and
+unauditable: asked "where did $39.5B come from", the honest answer is "the vendor said so".
 
-1. Screen the peer universe by sector and a (deliberately wide) revenue band.
-2. Build each peer's EV — `market cap + debt − cash` — and divide by LTM revenue. Computed here,
-   not taken from an opaque vendor field, so the bridge is auditable.
-3. Trim outliers with a Tukey fence (`Q1 − 1.5·IQR`, `Q3 + 1.5·IQR`). Mechanical, so exclusions are
-   reproducible; every dropped peer is named in a warning.
-4. Take the **median** — multiples are right-skewed and one hyper-growth peer would drag a mean.
-5. Apply an illiquidity discount (default 20%, overridable).
-6. Apply to subject revenue, then bridge EV → equity.
-7. Range comes from the peer **interquartile** multiples, so it reports observed disagreement among
-   comparables rather than an assumed tolerance.
+The live provider instead assembles it:
 
-Declines to conclude below three surviving peers: a "median" of two is not a market observation.
+```
+market cap = shares outstanding (SEC XBRL, dei) × close (public quote)
+EV         = market cap + debt (SEC XBRL) − cash (SEC XBRL)
+EV/Revenue = EV / LTM revenue (SEC XBRL, four trailing quarters)
+```
 
-### Discounted Cash Flow
+Two XBRL realities shape that code, and both were found by reading real filings:
 
-Unlevered FCF (`EBIT·(1−t) + D&A − capex − ΔNWC`) discounted at WACC, end-of-period convention,
-plus a Gordon terminal value. Two guardrails:
+* **Filers migrate between tags.** ServiceNow's last `LongTermDebtNoncurrent` fact is from 2021;
+  it now files `LongTermDebt`. Taking the first tag with data would value a 2026 company on a 2021
+  balance sheet, so candidate tags are gathered together, anything older than 15 months is
+  discarded, and the freshest fact wins.
+* **Periods overlap.** A 10-K's 12-month figure covers the same span as its quarters, so summing
+  naively double-counts. LTM revenue is assembled from four non-overlapping quarters, falling back
+  to the latest annual figure — and says which basis it used.
 
-- **WACC must exceed terminal growth** — otherwise Gordon has no finite solution. Fatal.
-- **Terminal value concentration is measured.** Past 75% of EV, the "discounted cash flow" is really
-  a perpetuity assumption wearing a forecast, and that is raised as an exception.
+Debt and cash decomposition genuinely varies by filer, so rather than pretend otherwise the
+provider **records the tags it used** (`us-gaap:LongTermDebt @2026-06-30 + us-gaap:ShortTermBorrowings
+@2026-06-30`) into the audit trail. An imprecision a reviewer can see and judge beats one hidden
+behind a single number.
 
-Range comes from re-running at WACC ±200bps.
+## The peer funnel
 
-### Last Round (market-adjusted)
+Comps reports the narrowing from universe to valued peer set, because how much judgement stood
+between the two is itself evidence:
 
-The last priced round is the only observable transaction in the company's own securities — an
-observation, where the other two are inferences. Its weakness is staleness, and the index adjustment
-is the correction.
+| Stage | Meaning |
+|---|---|
+| Considered | The sector universe, plus any research-layer proposals |
+| Dropped — data | No usable filings, no shares outstanding, no price, or non-positive EV |
+| Dropped — not comparable | Outside the size band, or rejected by the research layer |
+| Dropped — outlier | Outside the Tukey fence (`Q1 − 1.5·IQR`, `Q3 + 1.5·IQR`) |
+| Valued against | Minimum of three enforced — a "median" of two is not a market observation |
 
-The index is chosen by sector (SaaS marks against a cloud index, not the broad Nasdaq — marking 2022
-software to the composite badly understates the drawdown) and recorded as an overridable assumption.
-Rounds older than two years raise an exception. The range brackets the two defensible extremes:
-the unadjusted round value (β = 0, "the round still holds") and the fully marked value (β = 1).
+Every rejection carries a specific reason and appears in the memo and the UI.
+
+## The methods
+
+**Comps.** Screen, build each peer's EV, trim outliers by fence (mechanically, so exclusions are
+reproducible), take the **median** (multiples are right-skewed; one hyper-growth peer would drag a
+mean), apply an illiquidity discount, apply to subject revenue, bridge EV → equity. The range comes
+from the peer **interquartile** multiples, so it reports observed disagreement among comparables
+rather than an assumed tolerance.
+
+**DCF.** Unlevered FCF (`EBIT·(1−t) + D&A − capex − ΔNWC`) discounted at WACC, end-of-period, plus a
+Gordon terminal value. WACC at or below terminal growth is fatal. Terminal-value concentration is
+measured, and past 75% of EV the run raises an exception: the "discounted cash flow" is really a
+perpetuity assumption wearing a forecast.
+
+**Last Round.** The only observed transaction price in the company's own securities — an
+observation where the other two are inferences. Its weakness is staleness, and the index adjustment
+is the correction. The index is sector-matched (marking 2022 software to the broad composite badly
+understates the drawdown) and recorded as an overridable assumption. Rounds older than two years
+raise an exception. The range brackets the two defensible extremes: unadjusted (β = 0) and fully
+marked (β = 1).
+
+## The research layer
+
+Off by default. A sector tag is blunt — "SaaS" contains both a 90%-margin infrastructure business
+and a services-heavy implementation shop — and judging which businesses genuinely resemble each
+other is what a language model is good at. Two rules make that admissible:
+
+* **The model judges; Python calculates.** It may propose tickers and argue comparability. It never
+  produces a number. Every figure is computed from filings.
+* **Every call is an audit step** carrying the model id, effort, token usage, and the SHA-256 of the
+  exact prompt — so a reviewer can see that a machine made a judgement, which machine, and on what
+  input.
+
+Proposals are *added* to the standing universe, never substituted for it; the model sees each peer's
+**SEC registrant name**, so a hallucinated ticker resolves to its true owner and gets rejected on
+sight; a failed call degrades to the deterministic universe; and a review that would leave fewer than
+three peers is recorded but not applied.
 
 ## Reconciliation
 
 Weights (0.35 / 0.30 / 0.35) express relative confidence and are renormalised over whichever methods
-ran, so a skipped method redistributes its weight instead of dragging the answer toward zero.
-
-Dispersion is measured as the coefficient of variation across method conclusions:
+ran, so a skipped method redistributes its weight rather than dragging the answer toward zero.
+Dispersion is the coefficient of variation across method conclusions:
 
 | CV | Classification | Meaning |
 |---|---|---|
 | ≤ 10% | tight | Independent methods converging — real corroboration |
 | ≤ 25% | moderate | Normal for a private company; quote the range |
 | > 25% | wide | **Exception raised.** Reconcile before booking — a weighted average of conflicting evidence is not evidence |
-| — | single-method | Uncorroborated; the conclusion rests on one method's assumptions |
+| — | single-method | Uncorroborated; rests on one method's assumptions |
 
 ## Worked example
 
 ```bash
-vc-audit value examples/basis_ai.json --as-of 2026-08-22 --detail
+vc-audit value examples/basis_ai.json --as-of 2026-08-21 --data live --detail
 ```
 
-Basis AI has complete data, so all three methods run:
-
-| Method | Conclusion | Most sensitive to |
-|---|---:|---|
-| Comps | $79,777,778 | Peer size band |
-| DCF | $56,536,920 | Discount rate (±2% moves it 35%) |
-| Last Round | $106,139,288 | Index beta |
-
-Weighted conclusion **$82,032,049**, range $48.4M – $120.0M, and the run raises six exceptions —
-including wide cross-method dispersion (CV 30.7%), a terminal value at 83% of enterprise value, a
-round that closed 4.4 years ago, and one peer excluded at 28.33x revenue.
+Basis AI has complete data, so all three methods run against live SaaS comparables drawn from
+current 10-K/10-Q filings. The run raises six exceptions — wide cross-method dispersion, a terminal
+value at 83% of enterprise value, a round that closed 4.4 years ago, and a peer excluded at 28x
+revenue among them.
 
 That is the intended output. The tool's job is not to make three methods agree; it is to show that
 they don't, and why.
 
-The other two examples exercise the other paths: `inflo.json` (no projections → DCF skipped, the two
-remaining methods converge, CV 9.0%) and `northwind_labs.json` (round data only → single-method,
-flagged as uncorroborated).
+The other examples exercise the other paths: `inflo.json` (no projections → DCF skipped, the two
+remaining methods converge at CV 9.0%) and `northwind_labs.json` (round data only → single-method,
+flagged uncorroborated).
 
 ## Reproducibility
 
-`run_id` is a UUIDv5 over the canonical inputs; the fingerprint is a SHA-256 over every trail in the
-report. Same inputs and same code produce the same memo byte for byte, so a reviewer can diff
-quarters and see only real changes. Memos deliberately carry no generation timestamp — it would make
-two identical valuations diff as different.
+`run_id` is a UUIDv5 over the canonical inputs; the fingerprint is a SHA-256 over every trail. Same
+inputs and same code produce the same memo byte for byte, so a reviewer can diff quarters and see
+only real changes. Memos carry no generation timestamp — it would make two identical valuations diff
+as different.
+
+With `--data fixtures` a run is fully offline and deterministic. With live data and a **past**
+`--as-of`, it is equally reproducible: filings and closing prices for a historical date do not
+change, and no source is permitted to return data dated after the valuation date. Only `--as-of`
+today drifts, and only because the market is still open.
 
 ```bash
-vc-audit value examples/inflo.json --as-of 2026-08-22 --out out   # run once
-vc-audit runs                                                     # find the run id
-vc-audit explain <run-id> --markdown                              # reopen without recomputing
+vc-audit value examples/inflo.json --as-of 2026-08-21 --data fixtures --out out
+vc-audit runs
+vc-audit explain <run-id> --markdown
 ```
