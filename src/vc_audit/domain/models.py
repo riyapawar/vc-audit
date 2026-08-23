@@ -66,6 +66,14 @@ class PortfolioCompany(BaseModel):
     name: str = Field(min_length=1)
     sector: str = Field(description="Comparability screen key, e.g. 'saas'.")
     currency: str = Field(default="USD")
+    business_description: str | None = Field(
+        default=None,
+        description=(
+            "What the company actually does. Optional, and unused by the deterministic "
+            "screen, but it is what lets the research layer judge comparability on "
+            "business model rather than on sector label."
+        ),
+    )
 
     # Operating data (drives Comps)
     ltm_revenue_usd: float | None = Field(default=None, gt=0)
@@ -129,12 +137,34 @@ class PortfolioCompany(BaseModel):
 # --------------------------------------------------------------------------
 
 
+class FilingReference(BaseModel):
+    """A pointer to the SEC filing a peer's fundamentals were drawn from.
+
+    This is the strongest form of citation available to this system: not "a
+    vendor told us", but a URL to the primary document, which a reviewer can
+    open and tie the number back to.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    form: str = Field(description="Filing type, e.g. '10-K' or '10-Q'.")
+    filed_at: date
+    period_end: date | None = None
+    accession_number: str
+    url: str
+
+    def cite(self) -> str:
+        return f"{self.form} filed {self.filed_at.isoformat()} ({self.accession_number})"
+
+
 class PeerCompany(BaseModel):
     """A publicly traded comparable.
 
     Enterprise value is computed here rather than stored, so the comps method
     can record the bridge as an explicit step instead of trusting an opaque
-    vendor field.
+    vendor field. When the live provider is in use, every component of that
+    bridge -- shares, price, cash, debt, revenue -- traces to a filing or a
+    quote rather than to a pre-computed vendor figure.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -149,6 +179,22 @@ class PeerCompany(BaseModel):
     ltm_ebitda_usd: float | None = None
     revenue_growth_yoy: float | None = None
 
+    # -- provenance --------------------------------------------------------
+    latest_filing: FilingReference | None = Field(
+        default=None,
+        description="The 10-K or 10-Q the fundamentals were drawn from.",
+    )
+    inclusion_rationale: str | None = Field(
+        default=None,
+        description="Why this company is comparable to the subject. Written by the "
+        "research layer when enabled; otherwise the sector screen's reason.",
+    )
+    fundamentals_basis: str | None = Field(
+        default=None,
+        description="How LTM revenue was derived, e.g. 'trailing four quarters' or "
+        "'latest annual period'. Recorded because the two are not equivalent.",
+    )
+
     @property
     def enterprise_value_usd(self) -> float:
         return self.market_cap_usd + self.total_debt_usd - self.cash_usd
@@ -156,6 +202,43 @@ class PeerCompany(BaseModel):
     @property
     def ev_to_revenue(self) -> float:
         return self.enterprise_value_usd / self.ltm_revenue_usd
+
+
+class ExcludedPeer(BaseModel):
+    """A candidate that did not make the final peer set, and why.
+
+    Exclusions are as much a part of the record as inclusions: "which companies
+    did you consider and reject" is the first challenge a comps conclusion
+    attracts, and a peer set with no visible rejects looks curated.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    ticker: str
+    company_name: str | None = None
+    stage: Literal["data", "comparability", "statistical"] = Field(
+        description="Where in the funnel it dropped out: missing/unusable vendor "
+        "data, judged not comparable, or trimmed as a statistical outlier."
+    )
+    reason: str
+
+
+class PeerFunnel(BaseModel):
+    """The narrowing of a candidate universe down to the valued peer set.
+
+    Reported as counts plus the reason at each stage, so a reviewer can see how
+    much judgement stood between the universe and the multiple.
+    """
+
+    proposed: int
+    dropped_no_data: int
+    dropped_not_comparable: int
+    dropped_outlier: int
+    retained: int
+
+    @property
+    def total_dropped(self) -> int:
+        return self.dropped_no_data + self.dropped_not_comparable + self.dropped_outlier
 
 
 class IndexObservation(BaseModel):
@@ -290,6 +373,20 @@ class MethodResult(BaseModel):
     narrative: str = Field(description="Plain-English summary of how this was derived.")
     trail: AuditTrail
     sensitivity: SensitivityReport | None = None
+
+    # -- comparables evidence, populated by methods that use a peer set -----
+    peers: list[PeerCompany] = Field(
+        default_factory=list,
+        description="The comparables the conclusion was drawn from, with their filings.",
+    )
+    excluded_peers: list[ExcludedPeer] = Field(
+        default_factory=list,
+        description="Candidates considered and rejected, each with its reason.",
+    )
+    funnel: PeerFunnel | None = Field(
+        default=None,
+        description="How the candidate universe narrowed to the valued peer set.",
+    )
 
 
 class MethodSkip(BaseModel):

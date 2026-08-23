@@ -281,8 +281,8 @@
         }
       ]
     },
-    "EMCLOUD": {
-      "name": "Emerging Cloud Index (synthetic)",
+    "WCLD": {
+      "name": "Cloud Computing Index proxy (synthetic)",
       "observations": [
         {
           "date": "2021-01-31",

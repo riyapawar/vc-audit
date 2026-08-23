@@ -19,9 +19,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from vc_audit.data.base import PeerScreenResult
 from vc_audit.domain.audit import SourceRef
 from vc_audit.domain.errors import DataUnavailableError
-from vc_audit.domain.models import IndexObservation, PeerCompany
+from vc_audit.domain.models import ExcludedPeer, IndexObservation, PeerCompany
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -85,26 +86,73 @@ class MockMarketDataProvider:
         self,
         *,
         sector: str,
+        as_of: date,
         subject_revenue_usd: float | None = None,
         size_band: float = 500.0,
-    ) -> tuple[list[PeerCompany], SourceRef]:
+        extra_tickers: tuple[str, ...] = (),
+    ) -> PeerScreenResult:
         payload = self._load(PEERS_DATASET)
         universe = [PeerCompany(**row) for row in payload["companies"]]
 
         sector_key = sector.strip().lower()
-        peers = [p for p in universe if p.sector.lower() == sector_key]
+        in_sector = [p for p in universe if p.sector.lower() == sector_key]
+        excluded: list[ExcludedPeer] = []
 
         note = f"screened on sector='{sector_key}'"
+        peers = in_sector
         if subject_revenue_usd is not None and size_band > 0:
             floor = subject_revenue_usd / size_band
             ceiling = subject_revenue_usd * size_band
-            peers = [p for p in peers if floor <= p.ltm_revenue_usd <= ceiling]
+            kept = []
+            for peer in in_sector:
+                if floor <= peer.ltm_revenue_usd <= ceiling:
+                    kept.append(peer)
+                else:
+                    excluded.append(
+                        ExcludedPeer(
+                            ticker=peer.ticker,
+                            company_name=peer.name,
+                            stage="comparability",
+                            reason=(
+                                f"LTM revenue ${peer.ltm_revenue_usd:,.0f} falls outside the "
+                                f"{size_band:g}x size band around the subject"
+                            ),
+                        )
+                    )
+            peers = kept
             note += f", revenue within [${floor:,.0f}, ${ceiling:,.0f}]"
+
+        # PeerCompany is frozen, so the rationale is attached by copy rather
+        # than by mutation: a peer record must not change after it is built.
+        peers = [
+            peer.model_copy(
+                update={
+                    "inclusion_rationale": (
+                        f"Listed {sector_key} comparable in the fixture universe."
+                    )
+                }
+            )
+            for peer in peers
+        ]
 
         # Deterministic ordering. Fixture order is an accident of authoring, and
         # an accident must not be able to change a published valuation.
         peers.sort(key=lambda p: p.ticker)
-        return peers, self._source(PEERS_DATASET, payload, note)
+        excluded.sort(key=lambda e: e.ticker)
+
+        return PeerScreenResult(
+            peers=peers,
+            source=self._source(PEERS_DATASET, payload, note),
+            universe_size=len(in_sector),
+            excluded=excluded,
+            screen_description=note,
+        )
+
+    def describe(self) -> str:
+        return (
+            "Checked-in JSON fixtures standing in for a vendor feed; the comparable "
+            "universe is synthetic (invented tickers, fabricated figures)."
+        )
 
     def get_index_level(self, *, index_id: str, on: date) -> tuple[IndexObservation, SourceRef]:
         payload = self._load(INDEX_DATASET)
