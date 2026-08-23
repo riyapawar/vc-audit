@@ -1,0 +1,217 @@
+{
+  "dataset": "public_comps",
+  "as_of": "2026-08-22",
+  "description": "Synthetic public-comparable universe standing in for a vendor equity screen. Company names and tickers are invented; figures are plausible but fabricated, and must not be read as data about any real issuer.",
+  "currency": "USD",
+  "companies": [
+    {
+      "ticker": "ATLS",
+      "name": "Atlas Cloud Systems",
+      "sector": "saas",
+      "market_cap_usd": 42000000000.0,
+      "total_debt_usd": 3000000000.0,
+      "cash_usd": 5500000000.0,
+      "ltm_revenue_usd": 4600000000.0,
+      "ltm_ebitda_usd": 1240000000.0,
+      "revenue_growth_yoy": 0.19
+    },
+    {
+      "ticker": "NMBS",
+      "name": "Nimbus Analytics",
+      "sector": "saas",
+      "market_cap_usd": 12400000000.0,
+      "total_debt_usd": 800000000.0,
+      "cash_usd": 2100000000.0,
+      "ltm_revenue_usd": 1350000000.0,
+      "ltm_ebitda_usd": 270000000.0,
+      "revenue_growth_yoy": 0.24
+    },
+    {
+      "ticker": "VERT",
+      "name": "Verity Data",
+      "sector": "saas",
+      "market_cap_usd": 6800000000.0,
+      "total_debt_usd": 300000000.0,
+      "cash_usd": 1200000000.0,
+      "ltm_revenue_usd": 920000000.0,
+      "ltm_ebitda_usd": 140000000.0,
+      "revenue_growth_yoy": 0.16
+    },
+    {
+      "ticker": "QDRA",
+      "name": "Quadra Workflow",
+      "sector": "saas",
+      "market_cap_usd": 3200000000.0,
+      "total_debt_usd": 150000000.0,
+      "cash_usd": 600000000.0,
+      "ltm_revenue_usd": 410000000.0,
+      "ltm_ebitda_usd": 45000000.0,
+      "revenue_growth_yoy": 0.21
+    },
+    {
+      "ticker": "HLIO",
+      "name": "Helio Systems",
+      "sector": "saas",
+      "market_cap_usd": 28000000000.0,
+      "total_debt_usd": 1500000000.0,
+      "cash_usd": 4000000000.0,
+      "ltm_revenue_usd": 2200000000.0,
+      "ltm_ebitda_usd": 530000000.0,
+      "revenue_growth_yoy": 0.31
+    },
+    {
+      "ticker": "SGNL",
+      "name": "Signal Grid",
+      "sector": "saas",
+      "market_cap_usd": 1900000000.0,
+      "total_debt_usd": 100000000.0,
+      "cash_usd": 350000000.0,
+      "ltm_revenue_usd": 155000000.0,
+      "ltm_ebitda_usd": 12000000.0,
+      "revenue_growth_yoy": 0.34
+    },
+    {
+      "ticker": "KTRA",
+      "name": "Kestrel AI",
+      "sector": "saas",
+      "market_cap_usd": 9500000000.0,
+      "total_debt_usd": 50000000.0,
+      "cash_usd": 1050000000.0,
+      "ltm_revenue_usd": 300000000.0,
+      "ltm_ebitda_usd": -45000000.0,
+      "revenue_growth_yoy": 0.88
+    },
+    {
+      "ticker": "OBSD",
+      "name": "Obsidian Ledger",
+      "sector": "saas",
+      "market_cap_usd": 2100000000.0,
+      "total_debt_usd": 600000000.0,
+      "cash_usd": 250000000.0,
+      "ltm_revenue_usd": 620000000.0,
+      "ltm_ebitda_usd": 78000000.0,
+      "revenue_growth_yoy": 0.03
+    },
+    {
+      "ticker": "PYLN",
+      "name": "Pylon Payments",
+      "sector": "fintech",
+      "market_cap_usd": 15200000000.0,
+      "total_debt_usd": 2400000000.0,
+      "cash_usd": 3800000000.0,
+      "ltm_revenue_usd": 3100000000.0,
+      "ltm_ebitda_usd": 620000000.0,
+      "revenue_growth_yoy": 0.17
+    },
+    {
+      "ticker": "CRDX",
+      "name": "Cardinex",
+      "sector": "fintech",
+      "market_cap_usd": 7400000000.0,
+      "total_debt_usd": 1100000000.0,
+      "cash_usd": 1600000000.0,
+      "ltm_revenue_usd": 1450000000.0,
+      "ltm_ebitda_usd": 240000000.0,
+      "revenue_growth_yoy": 0.13
+    },
+    {
+      "ticker": "LEDG",
+      "name": "Ledgerline",
+      "sector": "fintech",
+      "market_cap_usd": 3600000000.0,
+      "total_debt_usd": 400000000.0,
+      "cash_usd": 900000000.0,
+      "ltm_revenue_usd": 580000000.0,
+      "ltm_ebitda_usd": 87000000.0,
+      "revenue_growth_yoy": 0.22
+    },
+    {
+      "ticker": "VLTA",
+      "name": "Volta Financial",
+      "sector": "fintech",
+      "market_cap_usd": 22000000000.0,
+      "total_debt_usd": 5000000000.0,
+      "cash_usd": 6500000000.0,
+      "ltm_revenue_usd": 4200000000.0,
+      "ltm_ebitda_usd": 1050000000.0,
+      "revenue_growth_yoy": 0.11
+    },
+    {
+      "ticker": "MRDN",
+      "name": "Meridian Credit",
+      "sector": "fintech",
+      "market_cap_usd": 1400000000.0,
+      "total_debt_usd": 900000000.0,
+      "cash_usd": 350000000.0,
+      "ltm_revenue_usd": 440000000.0,
+      "ltm_ebitda_usd": 61000000.0,
+      "revenue_growth_yoy": 0.08
+    },
+    {
+      "ticker": "VITL",
+      "name": "Vitalis Health",
+      "sector": "healthtech",
+      "market_cap_usd": 5600000000.0,
+      "total_debt_usd": 700000000.0,
+      "cash_usd": 1100000000.0,
+      "ltm_revenue_usd": 850000000.0,
+      "ltm_ebitda_usd": 110000000.0,
+      "revenue_growth_yoy": 0.2
+    },
+    {
+      "ticker": "CRSL",
+      "name": "Carousel Care",
+      "sector": "healthtech",
+      "market_cap_usd": 2300000000.0,
+      "total_debt_usd": 350000000.0,
+      "cash_usd": 500000000.0,
+      "ltm_revenue_usd": 470000000.0,
+      "ltm_ebitda_usd": 42000000.0,
+      "revenue_growth_yoy": 0.14
+    },
+    {
+      "ticker": "ASPN",
+      "name": "Aspen Clinical",
+      "sector": "healthtech",
+      "market_cap_usd": 11000000000.0,
+      "total_debt_usd": 1800000000.0,
+      "cash_usd": 2300000000.0,
+      "ltm_revenue_usd": 1600000000.0,
+      "ltm_ebitda_usd": 290000000.0,
+      "revenue_growth_yoy": 0.18
+    },
+    {
+      "ticker": "BZAR",
+      "name": "Bazaar Group",
+      "sector": "marketplace",
+      "market_cap_usd": 18500000000.0,
+      "total_debt_usd": 2000000000.0,
+      "cash_usd": 4000000000.0,
+      "ltm_revenue_usd": 2800000000.0,
+      "ltm_ebitda_usd": 480000000.0,
+      "revenue_growth_yoy": 0.15
+    },
+    {
+      "ticker": "TROV",
+      "name": "Trove Markets",
+      "sector": "marketplace",
+      "market_cap_usd": 4200000000.0,
+      "total_debt_usd": 500000000.0,
+      "cash_usd": 1000000000.0,
+      "ltm_revenue_usd": 720000000.0,
+      "ltm_ebitda_usd": 95000000.0,
+      "revenue_growth_yoy": 0.26
+    },
+    {
+      "ticker": "HRBR",
+      "name": "Harbor Exchange",
+      "sector": "marketplace",
+      "market_cap_usd": 1100000000.0,
+      "total_debt_usd": 200000000.0,
+      "cash_usd": 300000000.0,
+      "ltm_revenue_usd": 260000000.0,
+      "ltm_ebitda_usd": 28000000.0,
+      "revenue_growth_yoy": 0.09
+    }
+  ]
+}
