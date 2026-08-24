@@ -34,16 +34,19 @@ SECTOR_UNIVERSE: dict[str, tuple[str, ...]] = {
         "NET",   # Cloudflare
         "TWLO",  # Twilio
         "OKTA",  # Okta
-        "CFLT",  # Confluent
+        "INTA",  # Intapp, vertical SaaS for legal and professional services
         "GTLB",  # GitLab
         "BILL",  # BILL Holdings
         "BRZE",  # Braze
         "PCOR",  # Procore
         "ASAN",  # Asana
+        "DOCU",  # DocuSign
+        "WK",    # Workiva
+        "BOX",   # Box
     ),
     "fintech": (
         "PYPL",  # PayPal
-        "FI",    # Fiserv
+        "NCNO",  # nCino, banking SaaS
         "GPN",   # Global Payments
         "TOST",  # Toast
         "AFRM",  # Affirm

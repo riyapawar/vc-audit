@@ -1,0 +1,49 @@
+{
+  "projections": [
+    {
+      "year": 2026,
+      "revenue_usd": 14000000,
+      "ebit_usd": -1500000,
+      "depreciation_amortization_usd": 600000,
+      "capex_usd": 900000,
+      "change_in_nwc_usd": 400000,
+      "tax_rate": 0.21
+    },
+    {
+      "year": 2027,
+      "revenue_usd": 20000000,
+      "ebit_usd": 1200000,
+      "depreciation_amortization_usd": 800000,
+      "capex_usd": 1100000,
+      "change_in_nwc_usd": 550000,
+      "tax_rate": 0.21
+    },
+    {
+      "year": 2028,
+      "revenue_usd": 28000000,
+      "ebit_usd": 4500000,
+      "depreciation_amortization_usd": 1000000,
+      "capex_usd": 1400000,
+      "change_in_nwc_usd": 700000,
+      "tax_rate": 0.21
+    },
+    {
+      "year": 2029,
+      "revenue_usd": 37000000,
+      "ebit_usd": 8200000,
+      "depreciation_amortization_usd": 1200000,
+      "capex_usd": 1700000,
+      "change_in_nwc_usd": 800000,
+      "tax_rate": 0.21
+    },
+    {
+      "year": 2030,
+      "revenue_usd": 46000000,
+      "ebit_usd": 12400000,
+      "depreciation_amortization_usd": 1400000,
+      "capex_usd": 2000000,
+      "change_in_nwc_usd": 900000,
+      "tax_rate": 0.21
+    }
+  ]
+}

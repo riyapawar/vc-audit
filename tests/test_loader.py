@@ -6,6 +6,7 @@ are treated as a feature and tested as one.
 
 from __future__ import annotations
 
+import json
 from datetime import date
 
 import pytest
@@ -14,7 +15,7 @@ from vc_audit.domain.errors import FatalError
 from vc_audit.domain.models import PortfolioCompany
 from vc_audit.loader import load_company, parse_company, parse_overrides
 
-EXAMPLES = ["basis_ai", "inflo", "northwind_labs"]
+EXAMPLES = ["basis_ai", "inflo", "northwind_labs", "basis_ai_linked"]
 
 
 class TestLoadCompany:
@@ -41,6 +42,94 @@ class TestLoadCompany:
 
         with pytest.raises(FatalError, match="ltm_revenue_usd"):
             load_company(path)
+
+
+class TestProjectionsByReference:
+    """The brief allows projections as "a path to a file or a JSON object"."""
+
+    def _company(self, projections):
+        return {
+            "name": "X",
+            "sector": "saas",
+            "projections": projections,
+        }
+
+    def _year(self, year=2026):
+        return {"year": year, "revenue_usd": 1_000, "ebit_usd": 100}
+
+    def test_a_referenced_file_is_loaded(self, tmp_path):
+        (tmp_path / "forecast.json").write_text(
+            json.dumps({"projections": [self._year()]}), encoding="utf-8"
+        )
+        (tmp_path / "co.json").write_text(
+            json.dumps(self._company("forecast.json")), encoding="utf-8"
+        )
+        company = load_company(tmp_path / "co.json")
+
+        assert [p.year for p in company.projections] == [2026]
+
+    def test_a_bare_array_file_is_also_accepted(self, tmp_path):
+        (tmp_path / "forecast.json").write_text(json.dumps([self._year()]), encoding="utf-8")
+        (tmp_path / "co.json").write_text(
+            json.dumps(self._company("forecast.json")), encoding="utf-8"
+        )
+        assert len(load_company(tmp_path / "co.json").projections) == 1
+
+    def test_the_path_resolves_relative_to_the_company_record(self, tmp_path):
+        """So a pair of files can be moved together."""
+        nested = tmp_path / "sub"
+        nested.mkdir()
+        (nested / "forecast.json").write_text(json.dumps([self._year()]), encoding="utf-8")
+        (nested / "co.json").write_text(
+            json.dumps(self._company("forecast.json")), encoding="utf-8"
+        )
+        assert len(load_company(nested / "co.json").projections) == 1
+
+    def test_the_referenced_file_is_cited_as_the_projections_source(self, tmp_path):
+        (tmp_path / "forecast.json").write_text(json.dumps([self._year()]), encoding="utf-8")
+        (tmp_path / "co.json").write_text(
+            json.dumps(self._company("forecast.json")), encoding="utf-8"
+        )
+        source = load_company(tmp_path / "co.json").projections_source
+
+        assert source is not None
+        assert source.dataset == "forecast.json"
+
+    def test_an_explicit_source_is_not_overwritten(self, tmp_path):
+        (tmp_path / "forecast.json").write_text(json.dumps([self._year()]), encoding="utf-8")
+        payload = self._company("forecast.json")
+        payload["projections_source"] = {
+            "provider": "internal",
+            "dataset": "board_pack",
+            "as_of": "2025-09-30",
+        }
+        (tmp_path / "co.json").write_text(json.dumps(payload), encoding="utf-8")
+
+        assert load_company(tmp_path / "co.json").projections_source.dataset == "board_pack"
+
+    def test_a_missing_referenced_file_names_it(self, tmp_path):
+        (tmp_path / "co.json").write_text(
+            json.dumps(self._company("absent.json")), encoding="utf-8"
+        )
+        with pytest.raises(FatalError, match="projections file not found"):
+            load_company(tmp_path / "co.json")
+
+    def test_a_file_of_the_wrong_shape_is_rejected(self, tmp_path):
+        (tmp_path / "forecast.json").write_text(json.dumps("nope"), encoding="utf-8")
+        (tmp_path / "co.json").write_text(
+            json.dumps(self._company("forecast.json")), encoding="utf-8"
+        )
+        with pytest.raises(FatalError, match="list of projected years"):
+            load_company(tmp_path / "co.json")
+
+    def test_the_bundled_linked_example_loads(self):
+        company = load_company("examples/basis_ai_linked.json")
+        assert len(company.projections) == 5
+
+    def test_a_company_file_that_is_not_an_object_is_rejected(self, tmp_path):
+        (tmp_path / "co.json").write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+        with pytest.raises(FatalError, match="should contain a company object"):
+            load_company(tmp_path / "co.json")
 
 
 class TestValidationRules:

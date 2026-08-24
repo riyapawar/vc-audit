@@ -12,7 +12,6 @@ the same id and overwrites the same pack rather than accumulating duplicates.
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
 
@@ -33,6 +32,7 @@ from vc_audit.data.factory import build_provider
 from vc_audit.domain.errors import FatalError, VcAuditError
 from vc_audit.domain.models import ValuationReport
 from vc_audit.env import load_env_file
+from vc_audit.loader import load_company
 from vc_audit.methods.registry import all_methods
 from vc_audit.reporting import evidence, memo
 from vc_audit.research import build_researcher, research_available
@@ -112,11 +112,14 @@ def list_examples() -> list[dict]:
     examples = []
     for path in sorted(EXAMPLES_DIR.glob("*.json")):
         try:
-            examples.append(
-                {"file": path.name, "company": json.loads(path.read_text(encoding="utf-8"))}
-            )
-        except json.JSONDecodeError:
+            # Load through the same path the CLI uses, so a record referencing a
+            # separate projections file arrives expanded. Anything that is not a
+            # valid company record -- a projections fragment, say -- is skipped
+            # rather than offered to the UI as something it could value.
+            company = load_company(path)
+        except FatalError:
             continue
+        examples.append({"file": path.name, "company": company.model_dump(mode="json")})
     return examples
 
 

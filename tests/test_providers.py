@@ -271,3 +271,24 @@ class TestFactory:
     def test_an_unknown_mode_is_rejected_by_name(self):
         with pytest.raises(ValueError, match="unknown data mode 'offline'"):
             build_provider("offline")
+
+
+class TestCuratedUniverse:
+    """The universe is hand-maintained, so it can go stale silently."""
+
+    def test_no_ticker_is_duplicated_within_a_sector(self):
+        from vc_audit.data.universe import SECTOR_UNIVERSE
+
+        for sector, tickers in SECTOR_UNIVERSE.items():
+            assert len(tickers) == len(set(tickers)), f"{sector} repeats a ticker"
+
+    def test_every_sector_carries_headroom_over_the_peer_floor(self):
+        """Candidates are lost to missing filings, so the universe needs slack
+        above the three-peer minimum comps enforces."""
+        from vc_audit.data.universe import SECTOR_UNIVERSE
+        from vc_audit.methods.comps import MIN_PEERS
+
+        for sector, tickers in SECTOR_UNIVERSE.items():
+            assert len(tickers) >= MIN_PEERS * 2, (
+                f"{sector} has too few candidates to survive data attrition"
+            )

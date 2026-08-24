@@ -7,7 +7,7 @@ back to a formula, an input, and a filing.
 git clone https://github.com/riyapawar/vc-audit.git && cd vc-audit
 python -m venv .venv && .venv/Scripts/activate   # Unix: source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 240 tests, no network, no API keys
+pytest                                            # 282 tests, no network, no API keys
 vc-audit value examples/basis_ai.json --as-of 2026-08-21 --detail
 ```
 
@@ -371,14 +371,26 @@ vc-audit value examples/basis_ai.json --simulate-outage public_comps
 vc-audit runs
 vc-audit explain <run-id> --markdown
 
-pytest        # 240 tests
+pytest        # 282 tests
 ruff check src tests
 ```
 
-The three bundled examples exercise three different shapes: `basis_ai.json` has complete data so all
-three methods run and diverge; `inflo.json` has no projections so DCF is skipped and the remaining
-two converge; `northwind_labs.json` has only a priced round, so the result is single-method and
-flagged as uncorroborated.
+The bundled examples exercise the different shapes the tool has to handle. `basis_ai.json` has
+complete data, so all three methods run and diverge. `inflo.json` has no projections, so DCF is
+skipped and the remaining two converge. `northwind_labs.json` has only a priced round, so the result
+is single-method and flagged as uncorroborated. `basis_ai_linked.json` keeps its forecast in a
+separate file.
+
+**Projections may be inline or referenced.** A five-year forecast usually arrives as its own file
+from a different team, so `projections` accepts either an array or a path:
+
+```json
+{ "name": "Basis AI", "sector": "saas", "projections": "basis_ai_projections.json" }
+```
+
+The path resolves relative to the company record, and the referenced file is cited as the
+projections source in the memo. This applies to the CLI only, never the HTTP API: accepting a
+filesystem path from an HTTP client would let a caller read arbitrary files off the server.
 
 ### Optional: model-assisted peer selection
 

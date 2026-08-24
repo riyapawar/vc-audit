@@ -186,12 +186,23 @@ class TestArchive:
 
 class TestExamplesEndpoint:
     def test_serves_the_bundled_records(self, client):
+        served = {e["file"] for e in client.get("/api/examples").json()}
+
+        assert {"basis_ai.json", "inflo.json", "northwind_labs.json"} <= served
+
+    def test_skips_files_that_are_not_company_records(self, client):
+        """examples/ also holds a projections fragment, which is not valuable."""
+        served = {e["file"] for e in client.get("/api/examples").json()}
+
+        assert "basis_ai_projections.json" not in served
+
+    def test_a_referenced_projections_file_arrives_expanded(self, client):
+        """The UI posts the record back verbatim, so a bare path would not survive."""
         examples = client.get("/api/examples").json()
-        assert {e["file"] for e in examples} == {
-            "basis_ai.json",
-            "inflo.json",
-            "northwind_labs.json",
-        }
+        linked = next(e for e in examples if e["file"] == "basis_ai_linked.json")
+
+        assert isinstance(linked["company"]["projections"], list)
+        assert len(linked["company"]["projections"]) == 5
 
     def test_returns_empty_when_the_source_tree_is_absent(self, client, monkeypatch):
         monkeypatch.setattr(api_main, "EXAMPLES_DIR", Path("does/not/exist"))

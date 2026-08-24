@@ -10,6 +10,7 @@ than an exception bubbling out of a parser.
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -28,26 +29,89 @@ def _format_validation_error(exc: ValidationError, path: Path) -> str:
     return "\n".join(lines)
 
 
+def _read_json(path: Path, *, what: str) -> Any:
+    """Read one JSON file, reporting failures in an auditor's language."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise FatalError(f"{what} not found: {path}") from exc
+    except OSError as exc:
+        raise FatalError(f"could not read {what} {path}: {exc}") from exc
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise FatalError(
+            f"'{path.name}' is not valid JSON: line {exc.lineno}, {exc.msg}"
+        ) from exc
+
+
+def _resolve_projections(payload: dict[str, Any], *, base_dir: Path) -> dict[str, Any]:
+    """Expand a ``projections`` string into the forecast it points at.
+
+    Five-year forecasts usually arrive as their own file from a different team,
+    so ``"projections": "basis_ai_forecast.json"`` is supported alongside an
+    inline array. The path is resolved relative to the company record, so a pair
+    of files can be moved together.
+
+    Resolution happens here rather than in the model because the domain layer
+    performs no I/O, and because this must never apply to the HTTP API: taking a
+    filesystem path from an HTTP client would let a caller read arbitrary files
+    off the server.
+
+    The referenced file may hold either a bare array or an object with a
+    ``projections`` key, since both are natural ways to save a forecast.
+    """
+    projections = payload.get("projections")
+    if not isinstance(projections, str):
+        return payload
+
+    referenced = Path(projections)
+    if not referenced.is_absolute():
+        referenced = base_dir / referenced
+
+    loaded = _read_json(referenced, what="projections file")
+    if isinstance(loaded, dict):
+        loaded = loaded.get("projections", loaded)
+    if not isinstance(loaded, list):
+        raise FatalError(
+            f"'{referenced.name}' should contain a list of projected years, or an "
+            f"object with a 'projections' key holding one; found "
+            f"{type(loaded).__name__}"
+        )
+
+    resolved = dict(payload)
+    resolved["projections"] = loaded
+    resolved.setdefault(
+        "projections_source",
+        {
+            "provider": "internal",
+            "dataset": referenced.name,
+            "as_of": date.fromtimestamp(referenced.stat().st_mtime).isoformat(),
+            "note": "Loaded from a referenced projections file.",
+        },
+    )
+    return resolved
+
+
 def load_company(path: str | Path) -> PortfolioCompany:
     """Read and validate a company record.
+
+    A ``projections`` value may be an inline array or a path to a separate JSON
+    file, resolved relative to this record.
 
     Raises:
         FatalError: The file is missing, is not JSON, or fails validation. The
             message names the offending field.
     """
     path = Path(path)
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise FatalError(f"company file not found: {path}") from exc
-    except OSError as exc:
-        raise FatalError(f"could not read company file {path}: {exc}") from exc
+    payload = _read_json(path, what="company file")
+    if not isinstance(payload, dict):
+        raise FatalError(
+            f"'{path.name}' should contain a company object; found {type(payload).__name__}"
+        )
 
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise FatalError(f"'{path.name}' is not valid JSON: line {exc.lineno}, {exc.msg}") from exc
-
+    payload = _resolve_projections(payload, base_dir=path.parent)
     return parse_company(payload, source_name=path)
 
 
