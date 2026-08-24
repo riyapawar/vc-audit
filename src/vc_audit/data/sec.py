@@ -79,7 +79,32 @@ SHORT_TERM_DEBT_TAGS = (
     "ShortTermBorrowings",
     "DebtCurrent",
 )
-SHARES_TAGS = ("EntityCommonStockSharesOutstanding",)
+#: Share counts, in descending order of directness.
+#:
+#: Multi-class filers are the reason this is a chain rather than one tag. A
+#: company with Class A and Class B stock reports its cover-page share count
+#: *per class*, and SEC companyfacts only exposes undimensioned facts, so
+#: ``dei:EntityCommonStockSharesOutstanding`` is simply absent for Datadog,
+#: Cloudflare, Okta and many others. Worse, their
+#: ``us-gaap:CommonStockSharesOutstanding`` is often present but stale and zero
+#: (Datadog's reads 0 at 2019-12-31), so a naive fallback finds a number and
+#: silently values the company at nothing.
+#:
+#: The weighted-average tags are the reliable floor: every filer reports them
+#: every period because earnings per share depends on them.
+SHARES_INSTANT_TAGS = (
+    ("dei", "EntityCommonStockSharesOutstanding"),
+    ("us-gaap", "CommonStockSharesOutstanding"),
+)
+
+#: Duration facts, so they need their own lookup. Basic is preferred over
+#: diluted: diluted counts options and RSUs that are not actually outstanding,
+#: which would overstate market capitalisation.
+SHARES_DURATION_TAGS = (
+    "WeightedAverageNumberOfSharesOutstandingBasic",
+    "WeightedAverageNumberOfDilutedSharesOutstanding",
+    "WeightedAverageNumberOfShareOutstandingBasicAndDiluted",
+)
 
 #: A balance-sheet fact older than this is treated as absent rather than as
 #: current. Fifteen months covers an annual cycle plus filing lag; beyond it a
@@ -320,16 +345,51 @@ class SECClient:
                 )
         return None, None, None
 
-    def _shares(self, payload: dict[str, Any], *, as_of: date) -> float | None:
-        for tag in SHARES_TAGS:
-            facts = [
+    def _shares(self, payload: dict[str, Any], *, as_of: date) -> tuple[float | None, str | None]:
+        """Resolve a share count, and describe which tag produced it.
+
+        Walks a chain because no single tag covers every filer. A zero or
+        negative count is treated as absent rather than believed: a stale
+        ``CommonStockSharesOutstanding`` of 0 would otherwise value the company
+        at nothing while looking like real data.
+
+        Returns:
+            ``(shares, basis)``, or ``(None, None)`` when nothing usable exists.
+            The basis is recorded so a reviewer can see when a weighted average
+            stood in for an actual count.
+        """
+        oldest = as_of - timedelta(days=MAX_BALANCE_SHEET_AGE_DAYS)
+
+        for taxonomy, tag in SHARES_INSTANT_TAGS:
+            usable = [
                 f
-                for f in self._facts_for(payload, "dei", tag, "shares")
-                if f.period_end <= as_of
+                for f in self._facts_for(payload, taxonomy, tag, "shares")
+                if f.period_start is None and oldest <= f.period_end <= as_of and f.value > 0
             ]
-            if facts:
-                return facts[-1].value
-        return None
+            if usable:
+                fact = usable[-1]
+                return fact.value, f"{taxonomy}:{tag} @{fact.period_end.isoformat()}"
+
+        # Weighted averages are period figures, not point-in-time counts, so
+        # they approximate shares outstanding rather than stating it. Flagged as
+        # such because it is a real modelling difference in the market cap.
+        for tag in SHARES_DURATION_TAGS:
+            usable = [
+                f
+                for f in self._facts_for(payload, "us-gaap", tag, "shares")
+                if f.period_start is not None
+                and oldest <= f.period_end <= as_of
+                and f.value > 0
+                and f.form in PERIODIC_FORMS
+            ]
+            if usable:
+                fact = usable[-1]
+                return (
+                    fact.value,
+                    f"us-gaap:{tag} @{fact.period_end.isoformat()} "
+                    f"(period average, used because no point-in-time count is filed)",
+                )
+        return None, None
 
     def _component(
         self, payload: dict[str, Any], tags: tuple[str, ...], *, as_of: date
@@ -369,6 +429,9 @@ class SECClient:
             "revenue": f"us-gaap:{revenue_tag}" if revenue_tag else "not reported",
         }
 
+        shares, shares_basis = self._shares(payload, as_of=as_of)
+        components["shares"] = shares_basis or "not reported"
+
         anchor = self._latest_instant(payload, CASH_TAGS, as_of=as_of)
         period_end = anchor.period_end if anchor is not None else None
 
@@ -376,7 +439,7 @@ class SECClient:
             ticker=ticker.upper(),
             cik=cik,
             company_name=name,
-            shares_outstanding=self._shares(payload, as_of=as_of),
+            shares_outstanding=shares,
             ltm_revenue_usd=revenue,
             revenue_basis=basis,
             revenue_tag=revenue_tag,

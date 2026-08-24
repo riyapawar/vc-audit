@@ -28,12 +28,26 @@ def duration(start: str, end: str, val: float, form: str = "10-Q") -> dict:
     return {"start": start, "end": end, "val": val, "form": form, "accn": f"acc-{end}"}
 
 
+#: Tags that carry a share count rather than a dollar amount. EDGAR files these
+#: under the "shares" unit, and the resolver looks them up that way.
+SHARE_UNIT_TAGS = frozenset({
+    "EntityCommonStockSharesOutstanding",
+    "CommonStockSharesOutstanding",
+    "WeightedAverageNumberOfSharesOutstandingBasic",
+    "WeightedAverageNumberOfDilutedSharesOutstanding",
+    "WeightedAverageNumberOfShareOutstandingBasicAndDiluted",
+})
+
+#: Only the cover-page count lives in the dei taxonomy; the rest are us-gaap.
+DEI_TAGS = frozenset({"EntityCommonStockSharesOutstanding"})
+
+
 def facts(**tags: dict) -> dict:
     """Build a companyfacts payload from ``tag=[entries]`` pairs."""
     gaap, dei = {}, {}
     for tag, entries in tags.items():
-        unit = "shares" if tag == "EntityCommonStockSharesOutstanding" else "USD"
-        target = dei if unit == "shares" else gaap
+        unit = "shares" if tag in SHARE_UNIT_TAGS else "USD"
+        target = dei if tag in DEI_TAGS else gaap
         target[tag] = {"units": {unit: entries}}
     return {"facts": {"us-gaap": gaap, "dei": dei}}
 
@@ -173,6 +187,83 @@ class TestBalanceSheetFreshness:
             client._company_facts("0000000001"), ("LongTermDebt",), as_of=AS_OF
         )
         assert fact is None
+
+
+class TestShareCounts:
+    """Multi-class filers are why this is a chain and not a single tag."""
+
+    def test_prefers_the_cover_page_count(self, client):
+        load(client, facts(
+            EntityCommonStockSharesOutstanding=[instant("q", "2026-05-21", 819_000_000)],
+            WeightedAverageNumberOfSharesOutstandingBasic=[
+                duration("2026-02-01", "2026-04-30", 800_000_000)
+            ],
+        ))
+        shares, basis = client._shares(client._company_facts("0000000001"), as_of=AS_OF)
+
+        assert shares == 819_000_000
+        assert basis.startswith("dei:EntityCommonStockSharesOutstanding")
+
+    def test_falls_back_to_a_weighted_average_when_no_count_is_filed(self, client):
+        """Datadog and Cloudflare report shares per class, so the plain tag is absent."""
+        load(client, facts(WeightedAverageNumberOfSharesOutstandingBasic=[
+            duration("2026-04-01", "2026-06-30", 356_253_000)
+        ]))
+        shares, basis = client._shares(client._company_facts("0000000001"), as_of=AS_OF)
+
+        assert shares == 356_253_000
+        assert "period average" in basis, "an approximation must announce itself"
+
+    def test_a_stale_zero_count_is_not_believed(self, client):
+        """Datadog files CommonStockSharesOutstanding as 0, dated 2019. Trusting it
+        would value the company at nothing while looking like real data."""
+        load(client, facts(
+            CommonStockSharesOutstanding=[instant("q", "2019-12-31", 0)],
+            WeightedAverageNumberOfSharesOutstandingBasic=[
+                duration("2026-04-01", "2026-06-30", 356_253_000)
+            ],
+        ))
+        shares, basis = client._shares(client._company_facts("0000000001"), as_of=AS_OF)
+
+        assert shares == 356_253_000
+        assert "WeightedAverage" in basis
+
+    def test_a_current_zero_count_is_also_rejected(self, client):
+        load(client, facts(CommonStockSharesOutstanding=[instant("q", "2026-06-30", 0)]))
+        assert client._shares(client._company_facts("0000000001"), as_of=AS_OF) == (None, None)
+
+    def test_basic_is_preferred_over_diluted(self, client):
+        """Diluted counts options and RSUs that are not actually outstanding."""
+        load(client, facts(
+            WeightedAverageNumberOfSharesOutstandingBasic=[
+                duration("2026-04-01", "2026-06-30", 356_253_000)
+            ],
+            WeightedAverageNumberOfDilutedSharesOutstanding=[
+                duration("2026-04-01", "2026-06-30", 371_023_000)
+            ],
+        ))
+        shares, _ = client._shares(client._company_facts("0000000001"), as_of=AS_OF)
+
+        assert shares == 356_253_000
+
+    def test_a_stale_weighted_average_is_not_used(self, client):
+        load(client, facts(WeightedAverageNumberOfSharesOutstandingBasic=[
+            duration("2019-01-01", "2019-12-31", 300_000_000)
+        ]))
+        assert client._shares(client._company_facts("0000000001"), as_of=AS_OF) == (None, None)
+
+    def test_counts_after_the_valuation_date_are_invisible(self, client):
+        load(client, facts(EntityCommonStockSharesOutstanding=[
+            instant("q", "2026-05-21", 819_000_000),
+            instant("q", "2026-11-20", 900_000_000),
+        ]))
+        shares, _ = client._shares(client._company_facts("0000000001"), as_of=AS_OF)
+
+        assert shares == 819_000_000
+
+    def test_no_usable_tag_at_all_returns_nothing(self, client):
+        load(client, facts(Revenues=[duration("2025-02-01", "2026-01-31", 900, form="10-K")]))
+        assert client._shares(client._company_facts("0000000001"), as_of=AS_OF) == (None, None)
 
 
 class TestFundamentals:
