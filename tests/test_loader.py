@@ -223,3 +223,31 @@ class TestExampleContents:
         company = load_company("examples/northwind_labs.json")
         assert "projections" not in company.available_inputs()
         assert company.last_round_date == date(2021, 11, 30)
+
+
+class TestCurrency:
+    """Peer fundamentals are USD. A non-USD subject would be valued against USD
+    multiples and reported in USD with no sign of the mismatch, so the record is
+    refused rather than silently mis-valued."""
+
+    def test_usd_is_accepted(self):
+        assert parse_company({"name": "X", "sector": "saas", "currency": "USD"}).currency == "USD"
+
+    def test_the_default_is_usd(self):
+        assert parse_company({"name": "X", "sector": "saas"}).currency == "USD"
+
+    def test_case_and_whitespace_do_not_defeat_the_check(self):
+        assert parse_company({"name": "X", "sector": "saas", "currency": " usd "}).currency
+
+    @pytest.mark.parametrize("currency", ["EUR", "GBP", "eur", "JPY"])
+    def test_any_other_currency_is_refused(self, currency):
+        with pytest.raises(FatalError, match="is not supported"):
+            parse_company({"name": "X", "sector": "saas", "currency": currency})
+
+    def test_the_refusal_explains_the_consequence_not_just_the_rule(self):
+        with pytest.raises(FatalError) as caught:
+            parse_company({"name": "X", "sector": "saas", "currency": "EUR"})
+        message = str(caught.value)
+
+        assert "SEC filings in USD" in message
+        assert "Convert the record to USD" in message

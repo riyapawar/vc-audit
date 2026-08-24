@@ -65,7 +65,13 @@ class PortfolioCompany(BaseModel):
 
     name: str = Field(min_length=1)
     sector: str = Field(description="Comparability screen key, e.g. 'saas'.")
-    currency: str = Field(default="USD")
+    currency: str = Field(
+        default="USD",
+        description=(
+            "Reporting currency of every monetary field on this record. Only USD is "
+            "accepted; see the validator for why refusing beats converting silently."
+        ),
+    )
     business_description: str | None = Field(
         default=None,
         description=(
@@ -102,6 +108,21 @@ class PortfolioCompany(BaseModel):
 
     @model_validator(mode="after")
     def _validate_internal_consistency(self) -> PortfolioCompany:
+        # Peer fundamentals come from SEC filings and are denominated in USD, so a
+        # non-USD subject would have its revenue multiplied by a USD peer multiple
+        # and the result reported as dollars. That is a wrong number with no
+        # outward sign of being wrong, which is the one failure this tool must not
+        # have. Supporting other currencies means an as-of-bounded FX source and a
+        # recorded conversion step; until that exists, refusing is the honest
+        # behaviour and the error says so.
+        if self.currency.strip().upper() != "USD":
+            raise ValueError(
+                f"currency '{self.currency}' is not supported. Peer fundamentals are "
+                f"drawn from SEC filings in USD, so a non-USD subject would be valued "
+                f"against USD multiples and reported in USD without any indication of "
+                f"the mismatch. Convert the record to USD at a rate you can cite, or "
+                f"track the FX support noted in the README"
+            )
         if (self.last_post_money_valuation_usd is None) != (self.last_round_date is None):
             raise ValueError(
                 "last_post_money_valuation_usd and last_round_date must be provided "
