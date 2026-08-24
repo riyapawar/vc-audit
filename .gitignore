@@ -19,3 +19,7 @@ out/
 
 # local tooling
 .claude/
+
+# build artefacts
+dist/
+*.whl

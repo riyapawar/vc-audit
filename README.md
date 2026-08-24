@@ -440,9 +440,10 @@ research toggle with an explanation rather than failing at request time.
 [`docs/workflow.md`](docs/workflow.md) contains the data flow diagram, the module map, the XBRL
 extraction detail, and a worked example.
 
-[`docs/deploy.md`](docs/deploy.md) covers deployment. Vercel configuration is committed and works,
-with one honest caveat: serverless filesystems are ephemeral, so the evidence archive does not
-survive a cold start there. A container host with a persistent volume runs the service unchanged.
+[`docs/deploy.md`](docs/deploy.md) covers deployment. Railway is the recommended target and is
+configured in `railway.json`: it runs the service unchanged and, given a mounted volume, keeps the
+evidence archive across restarts. Vercel configuration is also committed and works, with the caveat
+that a serverless filesystem is ephemeral, so the archive does not survive a cold start there.
 
 Every run writes `memo.md`, `report.json` and `inputs.json` into `out/<run-id>/`.
 
