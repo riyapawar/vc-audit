@@ -312,7 +312,10 @@ class TestFundamentals:
         f = client.fundamentals("ACME", as_of=AS_OF)
 
         assert (f.cash_usd, f.debt_usd) == (0.0, 0.0)
-        assert f.components["debt"] == "not reported"
+        # The debt basis states the policy rather than shrugging, so a reader can
+        # tell "this filer has no borrowings" from "we failed to look".
+        assert "no debt reported" in f.components["debt"]
+        assert "operating leases excluded" in f.components["debt"]
 
 
 class TestFilingSelection:
@@ -362,3 +365,120 @@ class TestMalformedData:
             client._company_facts("0000000001"), ("LongTermDebt",), as_of=AS_OF
         )
         assert fact.value == 500
+
+
+class TestDebtRecipes:
+    """Debt is the least certain extraction in the pipeline and it feeds every
+    multiple. These pin the specific mis-assemblies found in real filings."""
+
+    def resolve(self, client, payload, cik="0000000001"):
+        load(client, payload, cik)
+        return client._resolve_debt(client._company_facts(cik), as_of=AS_OF)
+
+    def test_the_current_portion_is_never_added_to_a_total_that_includes_it(self, client):
+        """us-gaap:LongTermDebt is defined as including current maturities. Adding
+        LongTermDebtCurrent on top is the double-count this structure exists to
+        prevent, and it silently inflates enterprise value."""
+        amount, basis = self.resolve(client, facts(
+            LongTermDebt=[instant("d", "2026-06-30", 5_000)],
+            LongTermDebtCurrent=[instant("d", "2026-06-30", 800)],
+        ))
+
+        assert amount == 5_000, "the current portion is already inside the total"
+        assert "LongTermDebtCurrent" not in basis
+
+    def test_the_noncurrent_split_is_preferred_and_sums_cleanly(self, client):
+        amount, basis = self.resolve(client, facts(
+            LongTermDebtNoncurrent=[instant("d", "2026-06-30", 5_000)],
+            LongTermDebtCurrent=[instant("d", "2026-06-30", 800)],
+            ShortTermBorrowings=[instant("d", "2026-06-30", 200)],
+        ))
+
+        assert amount == 6_000
+        assert "noncurrent long-term debt plus its current portion" in basis
+
+    def test_a_stale_noncurrent_tag_falls_through_to_the_total(self, client):
+        """ServiceNow's case: it stopped reporting the noncurrent split in 2021."""
+        amount, basis = self.resolve(client, facts(
+            LongTermDebtNoncurrent=[instant("d", "2021-09-30", 1_484)],
+            LongTermDebt=[instant("d", "2026-06-30", 5_435)],
+            ShortTermBorrowings=[instant("d", "2026-06-30", 2_082)],
+        ))
+
+        assert amount == 7_517
+        assert "including current maturities" in basis
+
+    def test_convertible_notes_are_found_when_no_general_debt_tag_exists(self, client):
+        """Okta's case: $350M of converts was being read as no debt at all,
+        understating enterprise value by the full amount."""
+        amount, basis = self.resolve(client, facts(
+            ConvertibleDebtCurrent=[instant("d", "2026-04-30", 350)],
+        ))
+
+        assert amount == 350
+        assert "convertible notes" in basis
+
+    def test_convertible_notes_are_not_added_on_top_of_general_debt(self, client):
+        """Converts are normally already inside the reported long-term debt, so the
+        convertible recipe must stay a fallback rather than an addend."""
+        amount, _ = self.resolve(client, facts(
+            LongTermDebtNoncurrent=[instant("d", "2026-06-30", 5_000)],
+            ConvertibleDebtNoncurrent=[instant("d", "2026-06-30", 900)],
+        ))
+
+        assert amount == 5_000
+
+    def test_finance_leases_are_added_as_debt(self, client):
+        amount, basis = self.resolve(client, facts(
+            LongTermDebtNoncurrent=[instant("d", "2026-06-30", 5_000)],
+            FinanceLeaseLiabilityNoncurrent=[instant("d", "2026-06-30", 260)],
+            FinanceLeaseLiabilityCurrent=[instant("d", "2026-06-30", 275)],
+        ))
+
+        assert amount == 5_535
+        assert "FinanceLeaseLiability" in basis
+
+    def test_finance_leases_are_not_added_twice_when_the_tag_already_covers_them(self, client):
+        amount, _ = self.resolve(client, facts(
+            LongTermDebtAndCapitalLeaseObligations=[instant("d", "2026-06-30", 5_000)],
+            FinanceLeaseLiabilityNoncurrent=[instant("d", "2026-06-30", 260)],
+        ))
+
+        assert amount == 5_000
+
+    def test_finance_leases_alone_still_count(self, client):
+        amount, basis = self.resolve(client, facts(
+            FinanceLeaseLiabilityCurrent=[instant("d", "2026-04-30", 28)],
+        ))
+
+        assert amount == 28
+        assert "finance leases only" in basis
+
+    def test_operating_leases_are_never_treated_as_debt(self, client):
+        """Excluded for symmetry: the subject record carries no lease field, so
+        including peer leases would bias every multiple upward by construction."""
+        amount, basis = self.resolve(client, facts(
+            OperatingLeaseLiabilityNoncurrent=[instant("d", "2026-06-30", 2_047)],
+            OperatingLeaseLiabilityCurrent=[instant("d", "2026-06-30", 557)],
+        ))
+
+        assert amount == 0
+        assert "operating leases excluded by policy" in basis
+
+    def test_a_filer_with_no_borrowings_reports_zero_and_says_why(self, client):
+        amount, basis = self.resolve(client, facts(
+            CashAndCashEquivalentsAtCarryingValue=[instant("c", "2026-06-30", 900)],
+        ))
+
+        assert amount == 0
+        assert "no debt reported" in basis
+
+    def test_the_basis_names_every_tag_and_period_that_contributed(self, client):
+        """The trail has to show how the figure was assembled, not assert it."""
+        _, basis = self.resolve(client, facts(
+            LongTermDebtNoncurrent=[instant("d", "2026-06-30", 5_000)],
+            ShortTermBorrowings=[instant("d", "2026-03-31", 200)],
+        ))
+
+        assert "us-gaap:LongTermDebtNoncurrent @2026-06-30" in basis
+        assert "us-gaap:ShortTermBorrowings @2026-03-31" in basis

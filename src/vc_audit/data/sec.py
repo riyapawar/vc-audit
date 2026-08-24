@@ -67,14 +67,77 @@ SHORT_TERM_INVESTMENT_TAGS = (
     "MarketableSecuritiesCurrent",
     "AvailableForSaleSecuritiesDebtSecuritiesCurrent",
 )
-LONG_TERM_DEBT_TAGS = (
-    "LongTermDebtNoncurrent",
-    "LongTermDebt",
+#: Debt is resolved by **mutually exclusive recipes**, not by summing tag groups.
+#:
+#: The distinction matters because ``us-gaap:LongTermDebt`` is defined as the
+#: amount of long-term debt *including the current and noncurrent portions*.
+#: Adding ``LongTermDebtCurrent`` to it therefore double-counts the current
+#: maturities, and the result is simply a wrong enterprise value for every peer
+#: that reports both. Summing groups cannot express that constraint; an ordered
+#: list of complete recipes can.
+#:
+#: A recipe applies when its **first** component resolves to a fresh fact. The
+#: remaining components are added when present and ignored when absent, so a
+#: filer reporting no short-term borrowings is not penalised.
+#:
+#: ``covers_finance_leases`` marks the one recipe whose tag already folds
+#: capital and finance lease obligations into the reported figure, so the lease
+#: addend below is not applied on top of it.
+DEBT_RECIPES: tuple[tuple[str, tuple[tuple[str, ...], ...], bool], ...] = (
+    (
+        # Cleanest: the split is unambiguous and the parts sum without overlap.
+        "noncurrent long-term debt plus its current portion",
+        (("LongTermDebtNoncurrent",), ("LongTermDebtCurrent",), ("ShortTermBorrowings",)),
+        False,
+    ),
+    (
+        # Already a total. Never combined with LongTermDebtCurrent.
+        "total long-term debt including current maturities",
+        (("LongTermDebt",), ("ShortTermBorrowings",)),
+        False,
+    ),
+    (
+        "long-term debt and capital lease obligations",
+        (("LongTermDebtAndCapitalLeaseObligations",), ("ShortTermBorrowings",)),
+        True,
+    ),
+    (
+        "current debt plus noncurrent long-term debt",
+        (("DebtCurrent",), ("LongTermDebtNoncurrent",)),
+        False,
+    ),
+    (
+        # Filers whose only borrowing is convertible notes report none of the
+        # general debt tags at all. Okta is the case that exposed this: its
+        # $350M of convertible notes were being read as zero debt, understating
+        # enterprise value by the full amount.
+        "convertible notes",
+        (("ConvertibleDebtCurrent",), ("ConvertibleDebtNoncurrent",)),
+        False,
+    ),
 )
-SHORT_TERM_DEBT_TAGS = (
-    "LongTermDebtCurrent",
-    "ShortTermBorrowings",
-    "DebtCurrent",
+
+#: Finance leases are debt in substance: a fixed obligation to pay for an asset
+#: already controlled. Added unless the chosen recipe already covers them.
+FINANCE_LEASE_TAGS = (
+    ("FinanceLeaseLiabilityNoncurrent",),
+    ("FinanceLeaseLiabilityCurrent",),
+)
+
+#: Operating lease liabilities are **deliberately excluded**, and this is a
+#: judgement call rather than an oversight.
+#:
+#: Post-ASC 842 they sit on the balance sheet and a case exists for treating them
+#: as debt. The reason they are left out here is symmetry: the subject company
+#: record carries no lease field at all, so including peer lease obligations
+#: while the subject has none would inflate every peer's enterprise value against
+#: an unadjusted private company and bias the multiple upward by construction.
+#: An asymmetric adjustment is worse than a consistently omitted one.
+#:
+#: Recorded rather than silent, so a reviewer can disagree.
+OPERATING_LEASE_TAGS = (
+    ("OperatingLeaseLiabilityNoncurrent",),
+    ("OperatingLeaseLiabilityCurrent",),
 )
 #: Share counts, in descending order of directness.
 #:
@@ -395,6 +458,60 @@ class SECClient:
             return 0.0, None
         return fact.value, f"us-gaap:{fact.tag} @{fact.period_end.isoformat()}"
 
+
+    def _resolve_debt(self, payload: dict[str, Any], *, as_of: date) -> tuple[float, str]:
+        """Total interest-bearing debt, by the first recipe that applies.
+
+        Recipes are **mutually exclusive**: whichever one matches supplies the
+        complete figure. That is the whole point of the structure. Summing tag
+        groups independently double-counts current maturities for any filer that
+        reports both ``LongTermDebt``, which is defined as including the current
+        portion, and ``LongTermDebtCurrent``.
+
+        Returns the amount and a readable basis naming every tag and period that
+        contributed, so the trail shows how the figure was assembled rather than
+        asserting it.
+        """
+        for label, groups, covers_leases in DEBT_RECIPES:
+            primary = self._latest_instant(payload, groups[0], as_of=as_of)
+            if primary is None:
+                continue
+
+            total = primary.value
+            parts = [f"us-gaap:{primary.tag} @{primary.period_end.isoformat()}"]
+            for group in groups[1:]:
+                fact = self._latest_instant(payload, group, as_of=as_of)
+                if fact is not None and fact.value:
+                    total += fact.value
+                    parts.append(f"us-gaap:{fact.tag} @{fact.period_end.isoformat()}")
+
+            if not covers_leases:
+                total, parts = self._add_finance_leases(payload, total, parts, as_of=as_of)
+            return total, f"{' + '.join(parts)} [{label}]"
+
+        # No borrowings reported at all. Finance leases can still exist.
+        total, parts = self._add_finance_leases(payload, 0.0, [], as_of=as_of)
+        if parts:
+            return total, f"{' + '.join(parts)} [finance leases only]"
+        return 0.0, "no debt reported; operating leases excluded by policy"
+
+    def _add_finance_leases(
+        self, payload: dict[str, Any], total: float, parts: list[str], *, as_of: date
+    ) -> tuple[float, list[str]]:
+        """Add finance lease obligations, which are debt in substance.
+
+        A finance lease is a fixed obligation to pay for an asset already
+        controlled, so it belongs in enterprise value on the same footing as a
+        note. Operating leases are deliberately not added; see
+        :data:`OPERATING_LEASE_TAGS` for why.
+        """
+        for group in FINANCE_LEASE_TAGS:
+            fact = self._latest_instant(payload, group, as_of=as_of)
+            if fact is not None and fact.value:
+                total += fact.value
+                parts.append(f"us-gaap:{fact.tag} @{fact.period_end.isoformat()}")
+        return total, parts
+
     # ---- public API ------------------------------------------------------
 
     def fundamentals(self, ticker: str, *, as_of: date) -> Fundamentals:
@@ -413,14 +530,12 @@ class SECClient:
         investments, investments_tag = self._component(
             payload, SHORT_TERM_INVESTMENT_TAGS, as_of=as_of
         )
-        long_debt, long_debt_tag = self._component(payload, LONG_TERM_DEBT_TAGS, as_of=as_of)
-        short_debt, short_debt_tag = self._component(payload, SHORT_TERM_DEBT_TAGS, as_of=as_of)
+        debt, debt_basis = self._resolve_debt(payload, as_of=as_of)
 
         cash = cash_core + investments
-        debt = long_debt + short_debt
         components = {
             "cash": " + ".join(t for t in (cash_tag, investments_tag) if t) or "not reported",
-            "debt": " + ".join(t for t in (long_debt_tag, short_debt_tag) if t) or "not reported",
+            "debt": debt_basis,
             "revenue": f"us-gaap:{revenue_tag}" if revenue_tag else "not reported",
         }
 
