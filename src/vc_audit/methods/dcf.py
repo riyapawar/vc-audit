@@ -25,7 +25,7 @@ Notes on the modelling choices a reviewer will ask about:
 from __future__ import annotations
 
 from vc_audit.context import ValuationContext
-from vc_audit.domain.errors import AssumptionError
+from vc_audit.domain.errors import AssumptionError, InsufficientEvidenceError
 from vc_audit.domain.models import FinancialProjection, PortfolioCompany, ValuationRange
 from vc_audit.methods.base import DriverSpec, MethodOutcome, ValuationMethod, bridge_to_equity
 
@@ -141,6 +141,7 @@ class DiscountedCashFlow(ValuationMethod):
             )
 
         fcfs = self._record_cash_flows(projections, trail, source)
+        self._reject_uncapitalisable_terminal_year(projections, fcfs, trail)
         pv_explicit = self._record_present_values(projections, fcfs, wacc, trail)
         pv_terminal, terminal_value = self._record_terminal_value(
             projections, fcfs, wacc, terminal_growth, trail
@@ -219,6 +220,36 @@ class DiscountedCashFlow(ValuationMethod):
             sources=[source] if source else [],
         )
         return fcfs
+
+    def _reject_uncapitalisable_terminal_year(self, projections, fcfs, trail) -> None:
+        """Decline when the terminal year cannot be capitalised into a perpetuity.
+
+        Gordon growth multiplies the final year's cash flow by a positive factor,
+        so a negative terminal flow produces a negative terminal value and, very
+        often, a negative enterprise value overall. Arithmetically that is what
+        the formula says; as a valuation it is meaningless, because it assumes
+        the company burns cash forever while simultaneously being a going
+        concern worth valuing.
+
+        This matters more here than in general practice: a venture-stage company
+        still consuming cash in the final forecast year is the normal case, not
+        the exotic one. Returning a confident negative number would be the worst
+        available outcome, so the method declines instead.
+
+        Recoverable rather than fatal: the forecast is unusable for a DCF, but
+        comps and the last-round mark are unaffected and should still run.
+        """
+        final = fcfs[-1]
+        if final > 0:
+            return
+        raise InsufficientEvidenceError(
+            f"year-{projections[-1].year} unlevered free cash flow is "
+            f"${final:,.0f}. Gordon growth capitalises the terminal year into a "
+            f"perpetuity, so a non-positive terminal flow yields a negative "
+            f"terminal value and no meaningful enterprise value. Extend the "
+            f"forecast to a cash-generative year, or value this company on the "
+            f"other methods."
+        )
 
     def _record_present_values(self, projections, fcfs, wacc, trail) -> float:
         """Discount each forecast year, recording the factor and the result."""

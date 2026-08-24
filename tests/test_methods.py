@@ -300,3 +300,43 @@ class TestMethodContract:
             company, make_context(provider, "last_round", as_of=AS_OF)
         )
         assert early.equity_value_usd != pytest.approx(late.equity_value_usd)
+
+
+class TestDcfTerminalYearGuard:
+    """A venture company still burning cash in its final forecast year is the
+    normal case here, not the exotic one. Gordon growth capitalises that flow
+    into a negative perpetuity, so the method must decline rather than return a
+    confident negative number."""
+
+    def _burning(self, company, final_ebit: float):
+        years = list(company.projections)
+        years[-1] = years[-1].model_copy(update={"ebit_usd": final_ebit})
+        return company.model_copy(update={"projections": years})
+
+    def test_a_negative_terminal_cash_flow_is_declined(self, company, provider):
+        burning = self._burning(company, -8_000_000)
+        with pytest.raises(InsufficientEvidenceError, match="terminal year"):
+            DiscountedCashFlow().compute(burning, make_context(provider, "dcf"))
+
+    def test_the_refusal_names_the_year_and_the_figure(self, company, provider):
+        burning = self._burning(company, -8_000_000)
+        with pytest.raises(InsufficientEvidenceError) as caught:
+            DiscountedCashFlow().compute(burning, make_context(provider, "dcf"))
+
+        assert "2030" in str(caught.value)
+        assert "Gordon" in str(caught.value)
+
+    def test_the_other_methods_still_run(self, company, provider):
+        """Recoverable, not fatal: the forecast is unusable, the company is not."""
+        from vc_audit.engine import value_company
+
+        report = value_company(
+            self._burning(company, -8_000_000), provider=provider, as_of=AS_OF
+        )
+        assert {r.method_id for r in report.method_results} == {"comps", "last_round"}
+        skipped = next(s for s in report.skipped_methods if s.method_id == "dcf")
+        assert skipped.error_type == "InsufficientEvidenceError"
+
+    def test_a_positive_terminal_year_is_untouched(self, company, provider):
+        outcome = DiscountedCashFlow().compute(company, make_context(provider, "dcf"))
+        assert outcome.equity_value_usd > 0
