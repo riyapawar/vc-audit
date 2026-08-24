@@ -39,6 +39,13 @@ class ResilientMarketDataProvider:
         self.used_primary_for: set[str] = set()
         self.used_fallback_for: set[str] = set()
 
+    @property
+    def synthetic_universe(self) -> bool:
+        """True once a fallback has put us on the fixture universe."""
+        return bool(self.used_fallback_for) and getattr(
+            self._fallback, "synthetic_universe", False
+        )
+
     def describe(self) -> str:
         return (
             f"Primary: {self._primary.describe()} "

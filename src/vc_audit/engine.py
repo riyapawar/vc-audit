@@ -96,6 +96,7 @@ def value_company(
     )
 
     _record_data_sources(provider, trail)
+    _warn_if_research_cannot_land(provider, researcher, trail)
     selected, skipped = _select_methods(company, methods, trail)
     results, run_skips = _run_methods(
         selected, company, base_ctx, trail, run_sensitivity=run_sensitivity
@@ -146,6 +147,26 @@ def _record_data_sources(provider: MarketDataProvider, trail: AuditTrail) -> Non
         formula="provider configuration",
         inputs={"provider": provider.name},
         output=provider.describe(),
+    )
+
+
+def _warn_if_research_cannot_land(
+    provider: MarketDataProvider, researcher: Any | None, trail: AuditTrail
+) -> None:
+    """Flag the one provider and researcher combination that quietly does nothing.
+
+    The research layer proposes real tickers; the fixture universe contains
+    invented ones. Pointing one at the other costs an API call and changes
+    nothing, and the only visible symptom is a peer set that ignored every
+    proposal. Better to say so than to let a reviewer conclude the model was
+    consulted when in practice it was not.
+    """
+    if researcher is None or not getattr(provider, "synthetic_universe", False):
+        return
+    trail.warn(
+        "Peer research ran against the synthetic fixture universe, so its proposed "
+        "tickers could not resolve and did not affect the peer set. Use live data "
+        "for research to have any effect."
     )
 
 

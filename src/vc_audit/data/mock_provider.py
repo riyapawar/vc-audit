@@ -35,6 +35,10 @@ class MockMarketDataProvider:
 
     name = "yahoo_finance_mock"
 
+    #: The peer universe here is invented. Anything that proposes *real*
+    #: tickers, such as the research layer, cannot resolve against it.
+    synthetic_universe = True
+
     def __init__(
         self,
         fixtures_dir: Path | None = None,
