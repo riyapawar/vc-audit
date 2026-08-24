@@ -28,12 +28,17 @@ from rich.table import Table
 from vc_audit import engine
 from vc_audit.data.factory import build_provider
 from vc_audit.domain.errors import VcAuditError
+from vc_audit.env import load_env_file
 from vc_audit.loader import load_company, parse_overrides
 from vc_audit.methods.registry import all_methods, eligibility_report
 from vc_audit.reporting import console as console_report
 from vc_audit.reporting import evidence, memo
 from vc_audit.reporting.formatting import money, multiple
 from vc_audit.research import build_researcher
+
+# Pick up a local .env before any command reads a credential. A real
+# environment variable still wins; see vc_audit.env.
+load_env_file()
 
 app = typer.Typer(
     name="vc-audit",

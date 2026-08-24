@@ -382,16 +382,29 @@ flagged as uncorroborated.
 
 ### Optional: model-assisted peer selection
 
+This is the only part of the tool that needs a credential. Everything above runs without one.
+
 ```bash
 pip install -e ".[research]"
-$env:ANTHROPIC_API_KEY = "sk-ant-..."             # PowerShell
-export ANTHROPIC_API_KEY="sk-ant-..."             # bash
+cp .env.example .env        # then paste your key into ANTHROPIC_API_KEY=
 vc-audit value examples/basis_ai.json --research --detail
 ```
 
-A key is available from [console.anthropic.com](https://console.anthropic.com). Without one the tool
-runs normally on the deterministic sector screen, and the web UI disables the toggle with an
-explanation.
+`.env` is gitignored and read at startup by both the CLI and the HTTP service. A real environment
+variable always takes precedence over the file, so an exported value or a CI secret can never be
+silently overridden by a stale file on disk. If you would rather not use a file:
+
+```bash
+$env:ANTHROPIC_API_KEY = "sk-ant-..."             # PowerShell
+export ANTHROPIC_API_KEY="sk-ant-..."             # bash
+```
+
+Get a key from [console.anthropic.com](https://console.anthropic.com) under **API Keys**. The API
+is not free, so add a few dollars of credit under **Billing** first; peer research is two short
+calls per valuation at low reasoning effort.
+
+Without a key the tool runs normally on the deterministic sector screen, and the web UI disables the
+research toggle with an explanation rather than failing at request time.
 
 ## What I would do with more time
 

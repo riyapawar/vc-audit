@@ -32,9 +32,14 @@ from vc_audit.api.schemas import (
 from vc_audit.data.factory import build_provider
 from vc_audit.domain.errors import FatalError, VcAuditError
 from vc_audit.domain.models import ValuationReport
+from vc_audit.env import load_env_file
 from vc_audit.methods.registry import all_methods
 from vc_audit.reporting import evidence, memo
 from vc_audit.research import build_researcher, research_available
+
+# Loaded at import so `uvicorn vc_audit.api.main:app` sees it too, not just
+# the `vc-audit serve` path.
+load_env_file()
 
 STATIC_DIR = Path(__file__).parent / "static"
 OUTPUT_DIR = Path("out")
