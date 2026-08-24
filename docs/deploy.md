@@ -46,6 +46,14 @@ not do the equivalent of `pip install -e .`, then re-exports the same `app`
 object that `vc-audit serve` runs. It adds no behaviour, so the deployed service
 and a local run cannot diverge.
 
+It also restores the request path. The catch-all rewrite in `vercel.json` sends
+every URL to `/api/index`, and Vercel hands the function that rewritten path
+rather than the one the browser asked for, so a request for `/` arrives as
+`/api/index`, matches no route, and returns `{"detail":"Not Found"}` for every
+page while local development works perfectly. A small ASGI wrapper strips the
+function prefix before routing runs. `tests/test_vercel_entrypoint.py` covers it,
+because a fault of this shape is invisible to every other test in the suite.
+
 ## Railway (durable archive, but paid after the trial)
 
 Railway's free tier is a one-off trial credit rather than an ongoing free

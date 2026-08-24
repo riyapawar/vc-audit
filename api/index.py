@@ -35,6 +35,40 @@ _SRC = Path(__file__).resolve().parent.parent / "src"
 if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from vc_audit.api.main import app  # noqa: E402  (import follows the path fix above)
+from vc_audit.api.main import app as _app  # noqa: E402  (import follows the path fix above)
+
+#: The path this file is served at. `vercel.json` rewrites every incoming path
+#: here, and Vercel hands the function the *rewritten* path rather than the one
+#: the browser asked for. Without the shim below, a request for `/` arrives as
+#: `/api/index`, matches no route, and the deployment answers every page with
+#: `{"detail":"Not Found"}` while working perfectly in local development.
+_FUNCTION_PATH = "/api/index"
+
+
+class _RestoreRequestPath:
+    """Undo the rewrite so routing sees the URL the browser actually requested.
+
+    A minimal ASGI wrapper rather than FastAPI middleware, because the path has
+    to be corrected before routing runs, not after. Hosts that already pass the
+    original path through are unaffected: nothing matches the prefix, and the
+    scope is forwarded untouched.
+
+    Only an exact `/api/index` or a `/api/index/...` prefix is stripped, so the
+    real API routes (`/api/examples`, `/api/valuations`) are never touched.
+    """
+
+    def __init__(self, app):
+        self._app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            path = scope.get("path", "")
+            if path == _FUNCTION_PATH or path.startswith(_FUNCTION_PATH + "/"):
+                restored = path[len(_FUNCTION_PATH) :] or "/"
+                scope = {**scope, "path": restored, "raw_path": restored.encode("utf-8")}
+        await self._app(scope, receive, send)
+
+
+app = _RestoreRequestPath(_app)
 
 __all__ = ["app"]
