@@ -174,9 +174,12 @@ class TestLiveExclusions:
             provider.get_peers(sector="saas", as_of=AS_OF)
 
     def test_the_size_band_records_what_it_dropped(self):
+        """BBB is priced so its multiple stays plausible: the point of this test is
+        the size screen, and a corrupt figure would be caught earlier, at the data
+        stage, before comparability is ever considered."""
         provider = live(
-            {"AAA": fundamentals("AAA"), "BBB": fundamentals("BBB", ltm_revenue_usd=1e12)},
-            {"AAA": 10.0, "BBB": 10.0},
+            {"AAA": fundamentals("AAA"), "BBB": fundamentals("BBB", ltm_revenue_usd=5e8)},
+            {"AAA": 10.0, "BBB": 2000.0},
         )
         screen = provider.get_peers(
             sector="saas", as_of=AS_OF, subject_revenue_usd=100_000_000, size_band=2.0
@@ -292,3 +295,90 @@ class TestCuratedUniverse:
             assert len(tickers) >= MIN_PEERS * 2, (
                 f"{sector} has too few candidates to survive data attrition"
             )
+
+
+class TestBalanceSheetReconciliation:
+    """XBRL tag mapping is the least certain step in the pipeline, and picking the
+    wrong concept moves every multiple derived from it without changing anything a
+    reader would notice. These are the controls that make such a fault visible."""
+
+    def test_cash_above_total_assets_is_rejected(self):
+        """Cash cannot exceed assets. If it does, the cash tag is not cash."""
+        provider = live(
+            {"AAA": fundamentals("AAA", cash_usd=9e11, total_assets_usd=1e9)},
+            {"AAA": 10.0},
+        )
+        with pytest.raises(DataUnavailableError):
+            provider.get_peers(sector="saas", as_of=AS_OF)
+
+    def test_the_rejection_names_the_offending_tag_mapping(self):
+        provider = live(
+            {
+                "AAA": fundamentals("AAA"),
+                "BBB": fundamentals("BBB", debt_usd=9e11, total_liabilities_usd=1e9),
+            },
+            {"AAA": 10.0, "BBB": 10.0},
+        )
+        dropped = next(
+            e for e in provider.get_peers(sector="saas", as_of=AS_OF).excluded
+            if e.ticker == "BBB"
+        )
+
+        assert dropped.stage == "data"
+        assert "does not reconcile" in dropped.reason
+        assert "us-gaap:LongTermDebt" in dropped.reason, "must name the mapping at fault"
+
+    def test_a_filer_that_reports_no_totals_is_not_penalised(self):
+        """An absent control is not evidence of a fault."""
+        provider = live(
+            {"AAA": fundamentals("AAA", total_assets_usd=None, total_liabilities_usd=None)},
+            {"AAA": 200.0},
+        )
+        assert provider.get_peers(sector="saas", as_of=AS_OF).tickers == ["AAA"]
+
+    def test_a_reconciling_balance_sheet_passes(self):
+        provider = live(
+            {"AAA": fundamentals("AAA", total_assets_usd=1e9, total_liabilities_usd=5e8)},
+            {"AAA": 200.0},
+        )
+        assert provider.get_peers(sector="saas", as_of=AS_OF).tickers == ["AAA"]
+
+
+class TestMultiplePlausibility:
+    """A corrupt figure and an aggressive valuation are different findings and are
+    recorded at different funnel stages, so the cause is never mislabelled."""
+
+    def test_an_absurdly_high_multiple_is_a_data_fault(self):
+        # 1,000,000 shares at $200 with revenue of $1,000 implies 195,000x.
+        provider = live(
+            {"AAA": fundamentals("AAA"), "BBB": fundamentals("BBB", ltm_revenue_usd=1_000.0)},
+            {"AAA": 10.0, "BBB": 200.0},
+        )
+        dropped = next(
+            e for e in provider.get_peers(sector="saas", as_of=AS_OF).excluded
+            if e.ticker == "BBB"
+        )
+
+        assert dropped.stage == "data", "a corrupt figure is not a statistical outlier"
+        assert "plausible band" in dropped.reason
+
+    def test_an_absurdly_low_multiple_is_also_caught(self):
+        provider = live(
+            {"AAA": fundamentals("AAA"), "BBB": fundamentals("BBB", ltm_revenue_usd=1e13)},
+            {"AAA": 10.0, "BBB": 10.0},
+        )
+        dropped = next(
+            e for e in provider.get_peers(sector="saas", as_of=AS_OF).excluded
+            if e.ticker == "BBB"
+        )
+        assert "plausible band" in dropped.reason
+
+    def test_a_genuinely_high_but_real_multiple_survives(self):
+        """40x revenue is aggressive, not corrupt. The Tukey fence handles it later."""
+        provider = live(
+            {"AAA": fundamentals("AAA", ltm_revenue_usd=5_000_000.0)}, {"AAA": 200.0}
+        )
+        peers = provider.get_peers(sector="saas", as_of=AS_OF).peers
+
+        assert [p.ticker for p in peers] == ["AAA"]
+        assert peers[0].ev_to_revenue == pytest.approx(39.0)

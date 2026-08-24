@@ -51,9 +51,68 @@ INDEX_SYMBOLS = {
     "IGV": "IGV",
 }
 
+#: A peer whose implied multiple falls outside this band is almost certainly a
+#: data error rather than a market fact: no listed operating company trades at a
+#: twentieth of revenue or four hundred times it for reasons a peer screen should
+#: respect. Deliberately far wider than any plausible valuation, because this is
+#: a corruption detector and not a comparability judgement -- narrowing it would
+#: start silently discarding real companies. Genuine but extreme multiples are
+#: handled downstream by the Tukey fence, and are recorded at a different funnel
+#: stage so the two causes never get confused.
+MIN_PLAUSIBLE_EV_REVENUE = 0.05
+MAX_PLAUSIBLE_EV_REVENUE = 400.0
+
 #: How far back to pull index history. Comfortably covers any plausible round
 #: date without asking for decades of data on every call.
 _INDEX_HISTORY_YEARS = 12
+
+
+def _reconciliation_failure(facts) -> str | None:
+    """Check the selected cash and debt tags against the filed balance sheet.
+
+    XBRL tag mapping is the least certain step in this pipeline: filers use
+    different concepts for the same line, and picking the wrong one moves every
+    multiple derived from it without changing anything a reader would notice.
+    Cash cannot exceed total assets and debt cannot exceed total liabilities, so
+    a breach means the mapping selected something that is not what we think it
+    is, and the peer is unusable rather than merely imprecise.
+
+    Skipped rather than failed when the filer does not report the totals: an
+    absent control is not evidence of a fault.
+    """
+    if facts.total_assets_usd and facts.cash_usd > facts.total_assets_usd:
+        return (
+            f"balance sheet does not reconcile: cash and equivalents of "
+            f"${facts.cash_usd:,.0f} exceed total assets of "
+            f"${facts.total_assets_usd:,.0f}, so the cash tag mapping "
+            f"({facts.components.get('cash', 'unknown')}) selected the wrong concept"
+        )
+    if facts.total_liabilities_usd and facts.debt_usd > facts.total_liabilities_usd:
+        return (
+            f"balance sheet does not reconcile: debt of ${facts.debt_usd:,.0f} "
+            f"exceeds total liabilities of ${facts.total_liabilities_usd:,.0f}, so "
+            f"the debt tag mapping ({facts.components.get('debt', 'unknown')}) "
+            f"selected the wrong concept"
+        )
+    return None
+
+
+def _implausible_multiple(peer: PeerCompany) -> str | None:
+    """Reject a multiple that can only be a data fault, not a market price.
+
+    Distinct from outlier trimming, and recorded at a different funnel stage. A
+    peer at 800x revenue is not an aggressive valuation, it is a broken revenue
+    figure, and letting it into the set for the Tukey fence to catch would both
+    mislabel the cause and, with few peers, sometimes fail to catch it at all.
+    """
+    multiple = peer.ev_to_revenue
+    if MIN_PLAUSIBLE_EV_REVENUE <= multiple <= MAX_PLAUSIBLE_EV_REVENUE:
+        return None
+    return (
+        f"implied EV/Revenue of {multiple:,.2f}x falls outside the plausible band "
+        f"({MIN_PLAUSIBLE_EV_REVENUE:g}x to {MAX_PLAUSIBLE_EV_REVENUE:g}x), which "
+        f"indicates a corrupt or mis-scaled figure rather than a market price"
+    )
 
 
 class LiveMarketDataProvider:
@@ -229,6 +288,15 @@ class LiveMarketDataProvider:
                     f"net cash exceeds market capitalisation, giving a non-positive "
                     f"enterprise value of ${peer.enterprise_value_usd:,.0f}"
                 ),
+            )
+
+        failure = _reconciliation_failure(facts) or _implausible_multiple(peer)
+        if failure is not None:
+            return ExcludedPeer(
+                ticker=ticker,
+                company_name=facts.company_name,
+                stage="data",
+                reason=failure,
             )
         return peer
 

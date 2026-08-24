@@ -106,6 +106,13 @@ SHARES_DURATION_TAGS = (
     "WeightedAverageNumberOfShareOutstandingBasicAndDiluted",
 )
 
+#: Balance-sheet totals, used only to sanity-check the cash and debt tags this
+#: module selected. They are never valuation inputs themselves: a tag mapping
+#: that picks the wrong concept moves every multiple derived from it, and until
+#: now nothing would have noticed.
+TOTAL_ASSET_TAGS = ("Assets",)
+TOTAL_LIABILITY_TAGS = ("Liabilities", "LiabilitiesAndStockholdersEquity")
+
 #: A balance-sheet fact older than this is treated as absent rather than as
 #: current. Fifteen months covers an annual cycle plus filing lag; beyond it a
 #: figure describes a different company.
@@ -161,6 +168,10 @@ class Fundamentals:
     debt_usd: float
     period_end: date | None
     filing: FilingReference | None
+    #: Balance-sheet totals for reconciliation. ``None`` when the filer does not
+    #: report them, in which case the check is skipped rather than failed.
+    total_assets_usd: float | None = None
+    total_liabilities_usd: float | None = None
     #: Which XBRL tag and period produced each component, e.g.
     #: ``{"debt": "us-gaap:LongTermDebt @2026-06-30 + us-gaap:ShortTermBorrowings @2026-06-30"}``.
     #: Debt and cash decomposition varies by filer, so the tags actually used are
@@ -432,6 +443,9 @@ class SECClient:
         shares, shares_basis = self._shares(payload, as_of=as_of)
         components["shares"] = shares_basis or "not reported"
 
+        assets, _ = self._component(payload, TOTAL_ASSET_TAGS, as_of=as_of)
+        liabilities, _ = self._component(payload, TOTAL_LIABILITY_TAGS, as_of=as_of)
+
         anchor = self._latest_instant(payload, CASH_TAGS, as_of=as_of)
         period_end = anchor.period_end if anchor is not None else None
 
@@ -448,6 +462,8 @@ class SECClient:
             period_end=period_end,
             filing=self.latest_filing(cik, as_of=as_of),
             components=components,
+            total_assets_usd=assets or None,
+            total_liabilities_usd=liabilities or None,
         )
 
     def latest_filing(self, cik: str, *, as_of: date) -> FilingReference | None:
