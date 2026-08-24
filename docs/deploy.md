@@ -1,10 +1,56 @@
 # Deploying
 
-Railway is the recommended target, because it is the one that keeps the evidence
-archive. Vercel configuration is also committed and works, with a caveat worth
-understanding before you use it.
+**Deployment is optional.** The brief lists extensive deployment setup as not
+required, and everything in this project runs locally with no hosting at all.
+What follows is for putting a demo somewhere a reviewer can click.
 
-## Railway (recommended)
+Two targets are committed. Neither is strictly better; they trade different
+things.
+
+| | Vercel | Railway |
+|---|---|---|
+| Cost | Free tier, no card needed | Free tier is a **time-limited trial**, then paid |
+| Evidence archive | Lost on cold start (ephemeral `/tmp`) | Durable, given a mounted volume |
+| Live-run headroom | 60s function ceiling, and a full sector screen takes 13 to 20s | No request timeout |
+| Setup | Import the repo, accept defaults | Import the repo, then add a volume |
+
+Choose Vercel if you want a free URL and can accept that archived runs expire.
+Choose Railway if a durable archive matters more than the cost. Choose neither
+if a live demo is not worth the trouble, which is a defensible answer given the
+brief.
+
+## Vercel (free)
+
+`vercel.json`, `requirements.txt` and `api/index.py` are committed. Import the
+repo at [vercel.com/new](https://vercel.com/new) and accept every default, or:
+
+```bash
+npm i -g vercel
+vercel --prod
+```
+
+The caveat is that serverless filesystems are ephemeral. Only `/tmp` is
+writable and it does not outlive the instance, so **the evidence archive is not
+durable there**: a run is retrievable by id until the next cold start, after
+which `GET /api/valuations/{run_id}` returns 404. Every response still carries
+the complete valuation, memo and audit trail, so no individual request loses
+anything. What is lost is the archive across requests.
+
+Live runs are also close to the ceiling. A full sector screen takes 13 to 20
+seconds against the 60 second `maxDuration` set in `vercel.json`, and cold
+starts add to that. Passing `"data_mode": "fixtures"` responds in milliseconds
+and is the right choice for a quick demonstration.
+
+`api/index.py` puts `src/` on the import path, because a serverless bundle does
+not do the equivalent of `pip install -e .`, then re-exports the same `app`
+object that `vc-audit serve` runs. It adds no behaviour, so the deployed service
+and a local run cannot diverge.
+
+## Railway (durable archive, but paid after the trial)
+
+Railway's free tier is a one-off trial credit rather than an ongoing free
+allowance, so a deployment left running will eventually ask for a card. It is
+still the better target when the archive matters.
 
 Everything needed is committed: `railway.json` sets the build and start
 commands, and the app already reads its port and its output directory from the
@@ -87,29 +133,6 @@ takes roughly 13 to 20 seconds. Railway has no request timeout to worry about,
 but the first request after a cold start also pays for the SEC ticker map
 download. Passing `"data_mode": "fixtures"` responds in milliseconds and is the
 right choice for a quick demonstration.
-
-## Vercel (works, with a caveat)
-
-`vercel.json`, `requirements.txt` and `api/index.py` are committed, and the
-deployment works: import the repo at [vercel.com/new](https://vercel.com/new)
-and accept every default, or run `vercel --prod`.
-
-The caveat is that serverless filesystems are ephemeral. Only `/tmp` is
-writable and it does not outlive the instance, so **the evidence archive is not
-durable there**: a run is retrievable by id until the next cold start, after
-which `GET /api/valuations/{run_id}` returns 404. Every response still carries
-the complete valuation, memo and audit trail, so no individual request loses
-anything. What is lost is the archive, which is one of the things that makes
-this tool worth having.
-
-Live runs are also close to the ceiling. A full sector screen takes 13 to 20
-seconds against the 60 second `maxDuration` set in `vercel.json`, and cold
-starts add to that.
-
-`api/index.py` puts `src/` on the import path, because a serverless bundle does
-not do the equivalent of `pip install -e .`, then re-exports the same `app`
-object that `vc-audit serve` runs. It adds no behaviour, so the deployed service
-and a local run cannot diverge.
 
 ## Any container host
 
