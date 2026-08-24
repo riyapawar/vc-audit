@@ -237,9 +237,11 @@ class ExcludedPeer(BaseModel):
 
     ticker: str
     company_name: str | None = None
-    stage: Literal["data", "comparability", "statistical"] = Field(
-        description="Where in the funnel it dropped out: missing/unusable vendor "
-        "data, judged not comparable, or trimmed as a statistical outlier."
+    stage: Literal["data", "comparability", "statistical", "unreachable"] = Field(
+        description="Where in the funnel it dropped out: unusable data, judged not "
+        "comparable, trimmed as a statistical outlier, or a source that could not be "
+        "reached. The last is deliberately separate: it says nothing about the "
+        "company, and it means the peer set is not reproducible."
     )
     reason: str
 
@@ -256,10 +258,19 @@ class PeerFunnel(BaseModel):
     dropped_not_comparable: int
     dropped_outlier: int
     retained: int
+    #: Excluded because a source could not be reached, not because of anything
+    #: about the company. Counted separately because it is the one bucket that
+    #: means the peer set is not reproducible.
+    dropped_unreachable: int = 0
 
     @property
     def total_dropped(self) -> int:
-        return self.dropped_no_data + self.dropped_not_comparable + self.dropped_outlier
+        return (
+            self.dropped_no_data
+            + self.dropped_not_comparable
+            + self.dropped_outlier
+            + self.dropped_unreachable
+        )
 
 
 class IndexObservation(BaseModel):

@@ -382,3 +382,64 @@ class TestMultiplePlausibility:
 
         assert [p.ticker for p in peers] == ["AAA"]
         assert peers[0].ev_to_revenue == pytest.approx(39.0)
+
+
+class TestTransientFailures:
+    """A peer lost to a momentary network fault changes the median, so it is
+    reported as a fact about the run rather than about the company."""
+
+    def test_an_unreachable_source_is_staged_separately_from_absent_data(self):
+        from vc_audit.data.http import TransientDataError
+
+        provider = live(
+            {
+                "AAA": fundamentals("AAA"),
+                "BBB": TransientDataError("sec_edgar", "facts", "unreachable after 3 attempts"),
+            },
+            {"AAA": 10.0},
+        )
+        dropped = next(
+            e for e in provider.get_peers(sector="saas", as_of=AS_OF).excluded
+            if e.ticker == "BBB"
+        )
+
+        assert dropped.stage == "unreachable", "not a finding about the company"
+        assert "Re-run before relying" in dropped.reason
+
+    def _four_peer_screen(self, monkeypatch):
+        """Four candidates, so losing one still clears the three-peer floor and the
+        run reaches the funnel rather than declining outright."""
+        from vc_audit.data.http import TransientDataError
+
+        tickers = ("AAA", "BBB", "CCC", "DDD")
+        monkeypatch.setattr(
+            "vc_audit.data.live_provider.candidates_for",
+            lambda sector: tickers if sector == "saas" else (),
+        )
+        provider = live(
+            {t: fundamentals(t, ltm_revenue_usd=5_000_000.0) for t in tickers},
+            {t: 20.0 + i for i, t in enumerate(tickers)},
+        )
+        provider._sec.table["DDD"] = TransientDataError("sec_edgar", "facts", "timed out")
+        return provider
+
+    def test_the_comps_method_warns_that_the_run_is_not_reproducible(
+        self, company, monkeypatch
+    ):
+        from tests.conftest import make_context
+        from vc_audit.methods.comps import ComparableCompanyAnalysis
+
+        ctx = make_context(self._four_peer_screen(monkeypatch), "comps")
+        outcome = ComparableCompanyAnalysis().compute(company, ctx)
+
+        assert outcome.funnel.dropped_unreachable == 1
+        assert any("not reproducible" in w for w in ctx.trail.warnings)
+
+    def test_the_funnel_still_reconciles_with_unreachable_peers(self, company, monkeypatch):
+        from tests.conftest import make_context
+        from vc_audit.methods.comps import ComparableCompanyAnalysis
+
+        provider = self._four_peer_screen(monkeypatch)
+        f = ComparableCompanyAnalysis().compute(company, make_context(provider, "comps")).funnel
+
+        assert f.proposed == f.retained + f.total_dropped

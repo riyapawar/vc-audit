@@ -232,6 +232,19 @@ class ComparableCompanyAnalysis(ValuationMethod):
                 ctx.trail.warn(
                     f"Candidate {exclusion.ticker} could not be assembled: {exclusion.reason}"
                 )
+
+        unreachable = [e for e in screen.excluded if e.stage == "unreachable"]
+        if unreachable:
+            # This is the one exclusion class that invalidates reproducibility:
+            # the same command tomorrow would produce a different peer set and a
+            # different median. It is a finding about the run, not the companies.
+            ctx.trail.warn(
+                f"{len(unreachable)} candidate(s) were excluded because a data source "
+                f"could not be reached ({', '.join(e.ticker for e in unreachable)}), not "
+                f"because of anything about those companies. The peer median therefore "
+                f"reflects a smaller set than intended and is not reproducible. Re-run "
+                f"before relying on this conclusion."
+            )
         if len(screen.peers) < MIN_PEERS:
             raise InsufficientEvidenceError(
                 f"comps requires at least {MIN_PEERS} comparable peers; the screen for "
@@ -461,6 +474,7 @@ class ComparableCompanyAnalysis(ValuationMethod):
             dropped_no_data=no_data,
             dropped_not_comparable=not_comparable,
             dropped_outlier=len(trimmed),
+            dropped_unreachable=sum(1 for e in screen.excluded if e.stage == "unreachable"),
             retained=len(retained),
         )
         ctx.trail.record(

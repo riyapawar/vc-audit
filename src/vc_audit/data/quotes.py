@@ -17,7 +17,6 @@ letting it in would quietly invalidate every historical run.
 
 from __future__ import annotations
 
-import json
 import threading
 import urllib.error
 import urllib.parse
@@ -25,6 +24,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
+from vc_audit.data.http import RetryPolicy, fetch_json
 from vc_audit.domain.errors import DataUnavailableError
 
 CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
@@ -84,17 +84,14 @@ class QuoteClient:
             }
         )
         url = f"{CHART_URL.format(symbol=urllib.parse.quote(symbol))}?{params}"
-        request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-
-        try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            raise DataUnavailableError(self.name, symbol, f"HTTP {exc.code}") from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise DataUnavailableError(self.name, symbol, f"network error: {exc}") from exc
-        except json.JSONDecodeError as exc:
-            raise DataUnavailableError(self.name, symbol, f"malformed response: {exc}") from exc
+        payload = fetch_json(
+            url,
+            headers={"User-Agent": _USER_AGENT},
+            timeout_s=self._timeout,
+            provider=self.name,
+            dataset=symbol,
+            policy=RetryPolicy(),
+        )
 
         result = ((payload.get("chart") or {}).get("result") or [None])[0]
         if not result:

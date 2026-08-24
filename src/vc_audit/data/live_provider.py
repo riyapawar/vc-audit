@@ -27,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 from vc_audit.data.base import PeerScreenResult
+from vc_audit.data.http import TransientDataError
 from vc_audit.data.quotes import QuoteClient
 from vc_audit.data.sec import SECClient
 from vc_audit.data.universe import candidates_for, known_sectors
@@ -230,6 +231,16 @@ class LiveMarketDataProvider:
         """Assemble one peer, or explain precisely why it could not be assembled."""
         try:
             facts = self._sec.fundamentals(ticker, as_of=as_of)
+        except TransientDataError as exc:
+            # Distinct from "no such filer". A peer lost this way would have been
+            # in the set on a different day, so the median is not reproducible and
+            # the reason has to say so rather than reading like a finding about
+            # the company.
+            return ExcludedPeer(
+                ticker=ticker,
+                stage="unreachable",
+                reason=f"SEC EDGAR {exc.reason}. Re-run before relying on this peer set",
+            )
         except DataUnavailableError as exc:
             return ExcludedPeer(
                 ticker=ticker, stage="data", reason=f"SEC filings unavailable: {exc.reason}"
@@ -252,6 +263,13 @@ class LiveMarketDataProvider:
 
         try:
             quote = self._quotes.close_on(ticker, on=as_of)
+        except TransientDataError as exc:
+            return ExcludedPeer(
+                ticker=ticker,
+                company_name=facts.company_name,
+                stage="unreachable",
+                reason=f"price source {exc.reason}. Re-run before relying on this peer set",
+            )
         except DataUnavailableError as exc:
             return ExcludedPeer(
                 ticker=ticker,

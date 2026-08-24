@@ -27,16 +27,13 @@ Two facts about XBRL shape the design:
 
 from __future__ import annotations
 
-import json
 import threading
-import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from datetime import date, timedelta
 from typing import Any
 
+from vc_audit.data.http import RateLimiter, RetryPolicy, fetch_json
 from vc_audit.domain.errors import DataUnavailableError
 from vc_audit.domain.models import FilingReference
 
@@ -119,22 +116,6 @@ TOTAL_LIABILITY_TAGS = ("Liabilities", "LiabilitiesAndStockholdersEquity")
 MAX_BALANCE_SHEET_AGE_DAYS = 460
 
 
-class _RateLimiter:
-    """Serialises outbound requests so parallel peer fetches stay polite."""
-
-    def __init__(self, min_interval_s: float) -> None:
-        self._min_interval = min_interval_s
-        self._lock = threading.Lock()
-        self._last = 0.0
-
-    def wait(self) -> None:
-        with self._lock:
-            elapsed = time.monotonic() - self._last
-            if elapsed < self._min_interval:
-                time.sleep(self._min_interval - elapsed)
-            self._last = time.monotonic()
-
-
 @dataclass(frozen=True)
 class Fact:
     """One XBRL fact, with the filing it came from."""
@@ -194,7 +175,8 @@ class SECClient:
         # body would surface as a decode error rather than as a data failure.
         self._headers = {"User-Agent": user_agent, "Accept-Encoding": "identity"}
         self._timeout = timeout_s
-        self._limiter = _RateLimiter(_MIN_REQUEST_INTERVAL_S)
+        self._limiter = RateLimiter(_MIN_REQUEST_INTERVAL_S)
+        self._retry = RetryPolicy()
         self._cik_map: dict[str, tuple[str, str]] | None = None
         self._facts_cache: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
@@ -202,19 +184,21 @@ class SECClient:
     # ---- transport -------------------------------------------------------
 
     def _get_json(self, url: str) -> dict[str, Any]:
-        self._limiter.wait()
-        request = urllib.request.Request(url, headers=self._headers)
-        try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            raise DataUnavailableError(
-                self.name, url, f"HTTP {exc.code} from EDGAR"
-            ) from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise DataUnavailableError(self.name, url, f"network error: {exc}") from exc
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise DataUnavailableError(self.name, url, f"malformed response: {exc}") from exc
+        """Fetch and decode, retrying transient failures.
+
+        A peer lost to a momentary EDGAR hiccup would change the peer median, so
+        the retry here is protecting the valuation rather than the user's
+        patience.
+        """
+        return fetch_json(
+            url,
+            headers=self._headers,
+            timeout_s=self._timeout,
+            provider=self.name,
+            dataset=url,
+            limiter=self._limiter,
+            policy=self._retry,
+        )
 
     # ---- ticker resolution -----------------------------------------------
 
