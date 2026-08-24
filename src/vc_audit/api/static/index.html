@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VC Audit Tool</title>
+<!-- Inlined as a data URI rather than served from a route. A browser requests
+     /favicon.ico on its own for every page, and with no handler that shows as a
+     404 in the console of anyone who opens devtools, which on an auditing tool
+     is exactly the wrong first impression. Declaring one here stops the request
+     being made at all, on any host. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M8.5 17.2l5 5L23.5 10.5' stroke='%23fff' stroke-width='3.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 /* Palette slots 1-3 (blue / orange / aqua) carry method identity. Only the first
    three categorical slots clear the all-pairs colour-vision gates in both modes,
