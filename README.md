@@ -440,6 +440,10 @@ research toggle with an explanation rather than failing at request time.
 [`docs/workflow.md`](docs/workflow.md) contains the data flow diagram, the module map, the XBRL
 extraction detail, and a worked example.
 
+[`docs/deploy.md`](docs/deploy.md) covers deployment. Vercel configuration is committed and works,
+with one honest caveat: serverless filesystems are ephemeral, so the evidence archive does not
+survive a cold start there. A container host with a persistent volume runs the service unchanged.
+
 Every run writes `memo.md`, `report.json` and `inputs.json` into `out/<run-id>/`.
 
 > Live market data comes from SEC EDGAR, which requires no key, plus a public quote endpoint for

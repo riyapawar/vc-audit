@@ -12,6 +12,7 @@ the same id and overwrites the same pack rather than accumulating duplicates.
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
 
@@ -42,12 +43,34 @@ from vc_audit.research import build_researcher, research_available
 load_env_file()
 
 STATIC_DIR = Path(__file__).parent / "static"
-OUTPUT_DIR = Path("out")
 
-#: Sample company records shipped with the repository, offered by the web UI so
-#: a reviewer can run something immediately. Resolved relative to the source
-#: tree and treated as optional, since an installed wheel will not carry them.
-EXAMPLES_DIR = Path(__file__).resolve().parents[3] / "examples"
+#: Where evidence packs are written. Overridable because a serverless host gives
+#: the process a read-only filesystem apart from a temp directory, and because a
+#: real deployment wants this on a mounted volume rather than beside the code.
+#: Note that on an ephemeral filesystem the archive does not outlive the
+#: instance, so `/api/valuations/{run_id}` will 404 after a cold start.
+OUTPUT_DIR = Path(os.environ.get("VC_AUDIT_OUTPUT_DIR", "out"))
+
+
+def _find_examples_dir() -> Path:
+    """Locate the bundled example records.
+
+    Walks up from this file rather than indexing a fixed number of parents,
+    because the directory depth differs between an editable install, a built
+    wheel, and a serverless bundle. Returns a non-existent path when there is
+    nothing to find; the endpoint treats that as "no examples".
+    """
+    override = os.environ.get("VC_AUDIT_EXAMPLES_DIR")
+    if override:
+        return Path(override)
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "examples"
+        if candidate.is_dir():
+            return candidate
+    return Path("examples")
+
+
+EXAMPLES_DIR = _find_examples_dir()
 
 app = FastAPI(
     title="VC Audit Tool",

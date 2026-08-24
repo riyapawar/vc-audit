@@ -1,0 +1,11 @@
+# Vercel's Python runtime installs from this file rather than from pyproject.
+# Keep it in step with the `dependencies` list in pyproject.toml.
+#
+# The `research` extra is deliberately absent: it is optional, and pulling the
+# Anthropic SDK into every cold start would cost startup time a deployment that
+# never sets ANTHROPIC_API_KEY can never use. Add `anthropic>=0.69` here if you
+# want the research toggle live in a deployed UI.
+pydantic>=2.7
+fastapi>=0.111
+typer>=0.12
+rich>=13.7
