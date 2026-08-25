@@ -715,17 +715,49 @@ function parseOverrides(text) {
   return out;
 }
 
-async function loadExamples() {
+/* Enough of a record to run a valuation without the server serving anything.
+   A bundled data file failing to ship should degrade the demo, not end it. */
+const BUILT_IN_EXAMPLE = {
+  file: "built-in",
+  company: {
+    name: "Basis AI",
+    sector: "saas",
+    currency: "USD",
+    business_description:
+      "Enterprise SaaS platform selling AI-assisted document review to mid-market legal and " +
+      "compliance teams. Annual per-seat subscriptions, high gross margin.",
+    ltm_revenue_usd: 10000000,
+    cash_usd: 18000000,
+    debt_usd: 4000000,
+    last_post_money_valuation_usd: 120000000,
+    last_round_date: "2022-03-31",
+    last_round_series: "Series B",
+  },
+};
+
+function useExamples(examples, note) {
   const select = $("example");
+  select.innerHTML = examples
+    .map((e, i) => `<option value="${i}">${esc(e.company.name)} — ${esc(e.file)}</option>`).join("");
+  select.onchange = () => {
+    $("record").value = JSON.stringify(examples[select.value].company, null, 2);
+  };
+  select.onchange();
+  if (note) $("status").textContent = note;
+}
+
+async function loadExamples() {
   try {
-    const examples = await (await fetch("/api/examples")).json();
-    if (!examples.length) { select.innerHTML = "<option>No examples bundled</option>"; return; }
-    select.innerHTML = examples
-      .map((e, i) => `<option value="${i}">${esc(e.company.name)} — ${esc(e.file)}</option>`).join("");
-    select.onchange = () => { $("record").value = JSON.stringify(examples[select.value].company, null, 2); };
-    select.onchange();
+    const response = await fetch("/api/examples");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const examples = await response.json();
+    if (!Array.isArray(examples) || !examples.length) throw new Error("none bundled");
+    useExamples(examples);
   } catch {
-    select.innerHTML = "<option>Could not load examples</option>";
+    /* The bundled records did not load. Fall back rather than leave the page
+       unusable, and say so, because a silently different example set would be
+       worse than a missing one. */
+    useExamples([BUILT_IN_EXAMPLE], "Bundled examples unavailable; using a built-in record.");
   }
 }
 
