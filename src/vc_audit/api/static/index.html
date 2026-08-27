@@ -694,9 +694,12 @@ function render(report) {
   $("results").innerHTML = html;
   wireTips($("results"));
 
+  /* Read the recorded fact rather than pattern-matching a provider name: the
+     resilient provider is called "resilient", so name-matching reported every
+     live run as fixture data. */
   const step = report.engine_trail.steps.find((s) => s.label === "data_sources");
   const degraded = report.engine_trail.steps.some((s) => s.label === "data_degradation");
-  const live = step && /sec_edgar/.test(String(step.inputs?.provider ?? "")) && !degraded;
+  const live = Boolean(step?.inputs?.live) && !degraded;
   $("provenance").innerHTML =
     `<span class="badge ${live ? "live" : "fixtures"}">${live ? "live filings" : "fixture data"}</span>`;
 }

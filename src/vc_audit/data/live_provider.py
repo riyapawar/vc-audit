@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import date
 
 from vc_audit.data.base import PeerScreenResult
 from vc_audit.data.http import TransientDataError
@@ -321,37 +321,33 @@ class LiveMarketDataProvider:
     # ---- index -----------------------------------------------------------
 
     def get_index_level(self, *, index_id: str, on: date) -> tuple[IndexObservation, SourceRef]:
-        symbol = INDEX_SYMBOLS.get(index_id, index_id)
-        history = self._quotes.monthly_history(
-            symbol,
-            start=on - timedelta(days=365 * _INDEX_HISTORY_YEARS),
-            end=on,
-        )
-        candidates = [point for point in history if point[0] <= on]
-        if not candidates:
-            raise DataUnavailableError(
-                self.name,
-                "index_history",
-                f"no observation for '{index_id}' on or before {on.isoformat()}",
-            )
+        """The index close on ``on``, or the nearest prior trading day.
 
-        observed_on, level = candidates[-1]
-        is_exact = observed_on == on
+        Reads the **daily** series rather than the monthly one. Monthly bars are
+        labelled by the period they open, so a bar labelled 2021-11-01 carries
+        the 30 November close. Using them meant the memo reported an observation
+        date a month earlier than the figure actually came from: the number was
+        right and its provenance was wrong, which on this tool is the worse of
+        the two.
+        """
+        symbol = INDEX_SYMBOLS.get(index_id, index_id)
+        quote = self._quotes.close_on(symbol, on=on)
+
         observation = IndexObservation(
             index_id=index_id,
-            observed_on=observed_on,
-            level=level,
-            is_exact_date=is_exact,
+            observed_on=quote.observed_on,
+            level=quote.close,
+            is_exact_date=quote.is_exact_date,
             requested_date=on,
         )
         source = SourceRef(
             provider=self.name,
             dataset=f"index:{symbol}",
-            as_of=observed_on,
+            as_of=quote.observed_on,
             note=(
                 None
-                if is_exact
-                else f"{on.isoformat()} not an observation date; used prior close"
+                if quote.is_exact_date
+                else f"{on.isoformat()} was not a trading day; used the prior close"
             ),
         )
         return observation, source

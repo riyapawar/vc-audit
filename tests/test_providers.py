@@ -203,20 +203,38 @@ class TestLiveExclusions:
 
 
 class TestLiveIndex:
-    def test_returns_the_nearest_prior_observation_and_flags_it(self):
-        provider = live({}, {}, history=[(date(2026, 6, 30), 100.0), (date(2026, 7, 31), 110.0)])
+    """Index levels read the daily series, so the reported observation date is a
+    real trading day. Monthly bars are labelled by the period they open, which
+    made the memo cite a date a month before the figure actually came from."""
+
+    def test_an_exact_trading_day_needs_no_caveat(self):
+        provider = live({}, {"^IXIC": 110.0})
         observation, source = provider.get_index_level(index_id="^IXIC", on=AS_OF)
 
         assert observation.level == 110.0
-        assert observation.observed_on == date(2026, 7, 31)
+        assert observation.observed_on == AS_OF
+        assert observation.is_exact_date is True
+        assert source.note is None
+
+    def test_a_non_trading_day_is_flagged_with_the_date_actually_used(self):
+        prior = date(2026, 8, 20)
+
+        class HolidayQuotes(StubQuotes):
+            def close_on(self, symbol, *, on):
+                return Quote(symbol=symbol, close=110.0, observed_on=prior, requested_date=on)
+
+        provider = LiveMarketDataProvider(sec=StubSEC({}), quotes=HolidayQuotes({}))
+        observation, source = provider.get_index_level(index_id="^IXIC", on=AS_OF)
+
+        assert observation.observed_on == prior
         assert observation.is_exact_date is False
-        assert "prior close" in source.note
+        assert "was not a trading day" in source.note
+        assert source.as_of == prior, "the citation dates to the close actually used"
 
-    def test_never_looks_past_the_valuation_date(self):
-        provider = live({}, {}, history=[(date(2026, 7, 31), 110.0), (date(2026, 9, 30), 200.0)])
-        observation, _ = provider.get_index_level(index_id="^IXIC", on=AS_OF)
-
-        assert observation.level == 110.0
+    def test_an_unreachable_index_propagates_rather_than_guessing(self):
+        provider = live({}, {})  # no prices at all
+        with pytest.raises(DataUnavailableError):
+            provider.get_index_level(index_id="^IXIC", on=AS_OF)
 
 
 class TestResilientFallback:

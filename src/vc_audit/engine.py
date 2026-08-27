@@ -141,11 +141,19 @@ def _record_data_sources(provider: MarketDataProvider, trail: AuditTrail) -> Non
 
     First question a reviewer asks of any figure sourced outside the company.
     """
+    # `live` is recorded as a fact rather than left for a reader to infer from
+    # the provider's name. The UI previously pattern-matched that name and so
+    # labelled every run through the resilient provider as fixture data, even
+    # when the live primary had answered every request. Mislabelling where a
+    # figure came from is the one failure this tool cannot have.
     trail.record(
         label="data_sources",
         description="Identify the market data sources this run drew on.",
         formula="provider configuration",
-        inputs={"provider": provider.name},
+        inputs={
+            "provider": provider.name,
+            "live": not getattr(provider, "synthetic_universe", False),
+        },
         output=provider.describe(),
     )
 
