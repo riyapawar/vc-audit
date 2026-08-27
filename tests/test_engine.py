@@ -229,3 +229,40 @@ class TestDeterminism:
         ):
             assert [s.label for s in left.trail.steps] == [s.label for s in right.trail.steps]
             assert left.equity_value_usd == pytest.approx(right.equity_value_usd)
+
+
+class TestUnsettledValuationDate:
+    """Every other run is reproducible forever, because filed accounts and past
+    closes do not change. A valuation dated today is the exception: the run id is
+    seeded on the date, so a morning run and an evening run share an identifier
+    while producing different figures, and the later silently overwrites the
+    earlier one's evidence pack."""
+
+    def test_a_settled_past_date_says_nothing(self, company, provider):
+        report = value(company, provider, today=date(2026, 9, 1))
+        assert not any("have not settled" in w for w in report.all_warnings)
+
+    def test_valuing_as_of_today_is_flagged(self, company, provider):
+        report = value(company, provider, today=AS_OF)
+        warning = next(w for w in report.all_warnings if "have not settled" in w)
+
+        assert "today" in warning
+        assert "same run id" in warning
+
+    def test_a_future_date_is_flagged_and_named(self, company, provider):
+        report = value(company, provider, today=date(2026, 8, 1))
+        warning = next(w for w in report.all_warnings if "have not settled" in w)
+
+        assert "in the future (2026-08-22)" in warning
+
+    def test_the_engine_still_never_reads_the_clock(self, company, provider):
+        """Omitting the date skips the check rather than calling date.today(),
+        so this layer stays a pure function of its arguments."""
+        report = value(company, provider)
+        assert not any("have not settled" in w for w in report.all_warnings)
+
+    def test_the_warning_does_not_change_the_conclusion(self, company, provider):
+        quiet = value(company, provider)
+        flagged = value(company, provider, today=AS_OF)
+
+        assert flagged.concluded_value_usd == pytest.approx(quiet.concluded_value_usd)

@@ -50,6 +50,7 @@ def value_company(
     overrides: dict[str, Any] | None = None,
     run_sensitivity: bool = True,
     researcher: Any | None = None,
+    today: date | None = None,
 ) -> ValuationReport:
     """Produce a complete, auditable fair value estimate.
 
@@ -65,6 +66,9 @@ def value_company(
         run_sensitivity: Whether to stress each method's drivers.
         researcher: Optional model-driven peer selection. ``None`` keeps the
             run fully deterministic; see :mod:`vc_audit.research`.
+        today: The real calendar date, supplied by the caller so that nothing in
+            this layer reads the clock. Used only to tell an auditor when a
+            valuation date has not settled yet. Omit it and the check is skipped.
 
     Returns:
         A :class:`ValuationReport` carrying the conclusion and every trail
@@ -96,6 +100,7 @@ def value_company(
     )
 
     _record_data_sources(provider, trail)
+    _warn_if_the_date_has_not_settled(as_of, today, trail)
     _warn_if_research_cannot_land(provider, researcher, trail)
     selected, skipped = _select_methods(company, methods, trail)
     results, run_skips = _run_methods(
@@ -155,6 +160,38 @@ def _record_data_sources(provider: MarketDataProvider, trail: AuditTrail) -> Non
             "live": not getattr(provider, "synthetic_universe", False),
         },
         output=provider.describe(),
+    )
+
+
+def _warn_if_the_date_has_not_settled(
+    as_of: date, today: date | None, trail: AuditTrail
+) -> None:
+    """Flag a valuation dated today or later, whose inputs can still move.
+
+    Every other run in this system is reproducible: the same inputs give the same
+    fingerprint forever, because filed accounts and past closes do not change.
+    A valuation dated today is the exception. Run it before the session closes and
+    it marks against yesterday; run it again that evening and the same command
+    produces a different answer.
+
+    That would be tolerable if the two were distinguishable, but the run id is
+    seeded on the valuation date, so both runs share an identifier and the later
+    one overwrites the earlier one's evidence pack. A reviewer opening the archive
+    would find one figure under an id that had previously produced another, with
+    nothing to say why.
+
+    The engine still never reads the clock; the real date is passed in, so this
+    layer stays a pure function of its arguments and the check is testable
+    without freezing time.
+    """
+    if today is None or as_of < today:
+        return
+    when = "today" if as_of == today else f"in the future ({as_of.isoformat()})"
+    trail.warn(
+        f"The valuation date is {when}, so its market inputs have not settled. "
+        f"Re-running this command later in the day can produce a different figure "
+        f"under the same run id, overwriting this evidence pack. Value as of the "
+        f"last completed session for a mark that will still reconcile tomorrow."
     )
 
 

@@ -133,6 +133,7 @@ def value(
             overrides=overrides,
             run_sensitivity=sensitivity,
             researcher=researcher,
+            today=date.today(),
         )
     except VcAuditError as exc:
         _fail(str(exc))

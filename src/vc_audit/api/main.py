@@ -226,6 +226,7 @@ def create_valuation(request: ValuationRequest) -> ValuationReport:
             overrides=request.overrides,
             run_sensitivity=request.run_sensitivity,
             researcher=researcher,
+            today=date.today(),
         )
     except FatalError as exc:
         # The inputs are structurally valid but cannot support a valuation --
