@@ -344,10 +344,6 @@ class LiveMarketDataProvider:
             provider=self.name,
             dataset=f"index:{symbol}",
             as_of=quote.observed_on,
-            note=(
-                None
-                if quote.is_exact_date
-                else f"{on.isoformat()} was not a trading day; used the prior close"
-            ),
+            note=quote.substitution_note(),
         )
         return observation, source

@@ -229,11 +229,15 @@ class TestLastRound:
         assert any("Last round closed" in w for w in ctx.trail.warnings)
 
     def test_substituted_observation_dates_are_disclosed(self, company, provider):
-        """2026-08-22 is not in the month-end series, so a prior close is used."""
+        """The fixture series is month-end, so 2026-08-22 has no close of its own
+        and the mark falls back to the previous session. The disclosure names the
+        date actually used rather than asserting why the requested one was
+        unavailable, which is not something the tool can determine."""
         ctx = make_context(provider, "last_round")
         LastRoundMarkToMarket().compute(company, ctx)
 
-        assert any("nearest prior close" in w for w in ctx.trail.warnings)
+        assert any("had no published close" in w for w in ctx.trail.warnings)
+        assert any("previous session" in w for w in ctx.trail.warnings)
 
     def test_a_round_dated_after_the_valuation_date_is_rejected(self, company, provider):
         ctx = make_context(provider, "last_round", as_of=date(2021, 1, 31))

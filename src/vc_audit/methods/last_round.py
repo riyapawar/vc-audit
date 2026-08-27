@@ -196,9 +196,9 @@ class LastRoundMarkToMarket(ValuationMethod):
         for observation, label in ((start_obs, "round date"), (end_obs, "valuation date")):
             if not observation.is_exact_date:
                 trail.warn(
-                    f"No {index_id} observation on the {label} "
-                    f"({observation.requested_date.isoformat()}); used the nearest prior "
-                    f"close from {observation.observed_on.isoformat()}."
+                    f"{index_id} had no published close for the {label} "
+                    f"({observation.requested_date.isoformat()}); the mark uses the "
+                    f"previous session, {observation.observed_on.isoformat()}."
                 )
 
         trail.record(

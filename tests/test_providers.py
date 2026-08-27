@@ -228,7 +228,8 @@ class TestLiveIndex:
 
         assert observation.observed_on == prior
         assert observation.is_exact_date is False
-        assert "was not a trading day" in source.note
+        assert "no published close" in source.note
+        assert prior.isoformat() in source.note
         assert source.as_of == prior, "the citation dates to the close actually used"
 
     def test_an_unreachable_index_propagates_rather_than_guessing(self):
@@ -461,3 +462,36 @@ class TestTransientFailures:
         f = ComparableCompanyAnalysis().compute(company, make_context(provider, "comps")).funnel
 
         assert f.proposed == f.retained + f.total_dropped
+
+
+class TestSubstitutionNotes:
+    """The note must state what is observable and not assert a cause it cannot
+    check. Distinguishing a market holiday from a session that has not closed
+    needs an exchange calendar this tool does not carry, and asserting 'was not a
+    trading day' got it wrong for an ordinary Thursday whose close was simply not
+    published yet."""
+
+    def note(self, requested: date, observed: date) -> str | None:
+        return Quote(
+            symbol="^IXIC", close=1.0, observed_on=observed, requested_date=requested
+        ).substitution_note()
+
+    def test_an_exact_match_needs_no_note(self):
+        assert self.note(date(2026, 8, 26), date(2026, 8, 26)) is None
+
+    def test_a_weekday_without_a_close_does_not_claim_it_was_a_holiday(self):
+        """2026-08-27 is a Thursday. The session simply had not closed."""
+        note = self.note(date(2026, 8, 27), date(2026, 8, 26))
+
+        assert "not a trading day" not in note
+        assert "no published close for 2026-08-27" in note
+        assert "previous session, 2026-08-26" in note
+
+    def test_a_weekend_is_named_because_it_is_determinable_from_the_date(self):
+        note = self.note(date(2026, 8, 29), date(2026, 8, 28))  # Saturday
+
+        assert "(a weekend)" in note
+
+    def test_the_note_always_names_the_date_actually_used(self):
+        note = self.note(date(2026, 1, 1), date(2025, 12, 31))
+        assert "2025-12-31" in note

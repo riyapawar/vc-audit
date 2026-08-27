@@ -50,6 +50,27 @@ class Quote:
     def is_exact_date(self) -> bool:
         return self.observed_on == self.requested_date
 
+    def substitution_note(self) -> str | None:
+        """Describe the date substitution, without claiming a cause it cannot know.
+
+        Distinguishing a market holiday from a session that has not closed yet
+        needs an exchange calendar this tool does not carry. Saying "was not a
+        trading day" therefore asserts something it cannot check, and asserted it
+        wrongly: a valuation dated today, on an ordinary Thursday, was described
+        that way simply because the session's close had not been published.
+
+        So the note states only what is observable, and adds the weekend detail
+        only in the one case that is determinable from the date itself.
+        """
+        if self.is_exact_date:
+            return None
+        weekend = self.requested_date.weekday() >= 5
+        cause = " (a weekend)" if weekend else ""
+        return (
+            f"no published close for {self.requested_date.isoformat()}{cause}; "
+            f"used the previous session, {self.observed_on.isoformat()}"
+        )
+
 
 class QuoteClient:
     """Closing prices and index histories from a public chart endpoint."""
